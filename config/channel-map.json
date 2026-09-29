@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "description": "Map Discord channel IDs → Grok Bot agentIds. Rows with enabled=false are ignored (deny).",
+  "defaultSendPromptUrl": null,
+  "channels": [
+    {
+      "enabled": false,
+      "channelId": "1509249561947013131",
+      "label": "ai-gen-chat (stub — enable after token + agentId)",
+      "agentId": "",
+      "sendPromptUrl": null,
+      "requireMention": false
+    },
+    {
+      "enabled": false,
+      "channelId": "1509247663646965770",
+      "label": "discord-bot-infra (stub)",
+      "agentId": "",
+      "sendPromptUrl": null,
+      "requireMention": false
+    }
+  ]
+}

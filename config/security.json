@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "description": "Deny-by-default security. Order: guild → users → roles → channels → agent map. Ignore bots. DMs use pairing/allowlist.",
+  "guilds": {
+    "949100784186966066": {
+      "enabled": true,
+      "label": "KittenClubbers (OpenClaw shape seed — not live until Discord token)",
+      "requireMention": false,
+      "ownerId": "339560375924031498",
+      "allowFrom": [
+        "339560375924031498",
+        "354095575282614272"
+      ],
+      "allowRoles": [],
+      "allowChannels": []
+    }
+  },
+  "dm": {
+    "policy": "pairing",
+    "allowFrom": [
+      "339560375924031498",
+      "354095575282614272"
+    ],
+    "ownerId": "339560375924031498",
+    "defaultAgentId": null
+  },
+  "ignoreBots": true
+}
