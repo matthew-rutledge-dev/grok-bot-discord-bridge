@@ -27,7 +27,7 @@ export function createDiscordClient(): Client {
   });
 }
 
-/** Pure wake prompt: first line `d:<slug>:<message.id>`, optional thin JSON, compat meta, human text. */
+/** Pure wake prompt: `d:<slug>:<message.id>`, thin JSON `{id,g,u,map}`, human text. */
 export function formatWakePrompt(args: {
   slug: string;
   messageId: string;
@@ -45,15 +45,7 @@ export function formatWakePrompt(args: {
     u: args.userId,
     map: args.alias,
   });
-  const where = args.guildId
-    ? `guild=${args.guildId} channel=${args.channelId}`
-    : `dm user=${args.userId}`;
-  return [
-    plugId,
-    thin,
-    `[discord-bridge] from=${args.userId} (${args.userTag}) ${where} msg=${args.messageId}`,
-    args.cleaned,
-  ].join("\n");
+  return [plugId, thin, args.cleaned].join("\n");
 }
 
 function buildPrompt(
