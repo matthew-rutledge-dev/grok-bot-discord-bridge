@@ -27,14 +27,50 @@ export function createDiscordClient(): Client {
   });
 }
 
-function buildPrompt(message: Message, cleaned: string): string {
-  const where = message.guild
-    ? `guild=${message.guild.id} channel=${message.channelId}`
-    : `dm user=${message.author.id}`;
+/** Pure wake prompt: first line `d:<slug>:<message.id>`, optional thin JSON, compat meta, human text. */
+export function formatWakePrompt(args: {
+  slug: string;
+  messageId: string;
+  guildId: string | null;
+  channelId: string;
+  userId: string;
+  userTag: string;
+  alias: string;
+  cleaned: string;
+}): string {
+  const plugId = `d:${args.slug}:${args.messageId}`;
+  const thin = JSON.stringify({
+    id: plugId,
+    g: args.guildId,
+    u: args.userId,
+    map: args.alias,
+  });
+  const where = args.guildId
+    ? `guild=${args.guildId} channel=${args.channelId}`
+    : `dm user=${args.userId}`;
   return [
-    `[discord-bridge] from=${message.author.id} (${message.author.tag}) ${where} msg=${message.id}`,
-    cleaned,
+    plugId,
+    thin,
+    `[discord-bridge] from=${args.userId} (${args.userTag}) ${where} msg=${args.messageId}`,
+    args.cleaned,
   ].join("\n");
+}
+
+function buildPrompt(
+  message: Message,
+  cleaned: string,
+  opts: { slug: string; alias: string },
+): string {
+  return formatWakePrompt({
+    slug: opts.slug,
+    messageId: message.id,
+    guildId: message.guild?.id ?? null,
+    channelId: message.channelId,
+    userId: message.author.id,
+    userTag: message.author.tag,
+    alias: opts.alias,
+    cleaned,
+  });
 }
 
 export function wireDiscord(client: Client, cfg: AppConfig): void {
@@ -72,6 +108,8 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
 
       let agentId: string | undefined;
       let sendUrl: string | undefined;
+      let wakeSlug = "dm";
+      let wakeAlias = "";
 
       if (message.guild) {
         const authz = authorizeGuildMessage(cfg, message);
@@ -85,6 +123,8 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         }
         agentId = authz.agentId;
         sendUrl = authz.sendPromptUrl;
+        wakeSlug = authz.mapRow?.slug || authz.mapRow?.channelId || "unknown";
+        wakeAlias = authz.mapRow?.alias || authz.agentId || "";
       } else {
         const authz = authorizeDm(cfg, message.author);
         if (!authz.ok) {
@@ -100,6 +140,8 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         }
         agentId = authz.agentId;
         sendUrl = authz.sendPromptUrl;
+        wakeSlug = cfg.security.dm?.slug || "dm";
+        wakeAlias = cfg.security.dm?.alias || authz.agentId || "";
       }
 
       if (!agentId || !sendUrl) {
@@ -113,7 +155,10 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
       );
       if (!cleaned) return;
 
-      const prompt = buildPrompt(message, cleaned);
+      const prompt = buildPrompt(message, cleaned, {
+        slug: wakeSlug,
+        alias: wakeAlias,
+      });
       const result = await sendPrompt(
         sendUrl,
         {

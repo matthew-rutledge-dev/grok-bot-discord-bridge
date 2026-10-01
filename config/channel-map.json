@@ -6,6 +6,8 @@
     {
       "enabled": false,
       "channelId": "1509249561947013131",
+      "slug": "ai-gen-chat",
+      "alias": "Rimuru_orch",
       "label": "ai-gen-chat (stub — enable after token + agentId)",
       "agentId": "",
       "sendPromptUrl": null,
@@ -14,6 +16,8 @@
     {
       "enabled": false,
       "channelId": "1509247663646965770",
+      "slug": "discord-bot-infra",
+      "alias": "Diablo_server",
       "label": "discord-bot-infra (stub)",
       "agentId": "",
       "sendPromptUrl": null,

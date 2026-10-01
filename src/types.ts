@@ -1,6 +1,10 @@
 export interface ChannelMapRow {
   enabled: boolean;
   channelId: string;
+  /** Stable short name for wake header `d:<slug>:<messageId>` (e.g. ai-gen-chat). */
+  slug: string;
+  /** Agent alias for optional thin JSON `map` field (e.g. Rimuru_orch). */
+  alias?: string;
   label?: string;
   agentId: string;
   sendPromptUrl?: string | null;
@@ -29,6 +33,10 @@ export interface DmSecurity {
   allowFrom: string[];
   ownerId?: string;
   defaultAgentId?: string | null;
+  /** Optional DM wake slug (default: dm). */
+  slug?: string;
+  /** Optional DM agent alias for thin JSON map. */
+  alias?: string;
 }
 
 export interface SecurityFile {
