@@ -58,10 +58,41 @@ export interface SendPromptResponse {
   [key: string]: unknown;
 }
 
+/** Base64 body (no data-URL prefix). Requires filename. */
+export interface CallbackAttachmentData {
+  filename: string;
+  contentType?: string;
+  data: string;
+}
+
+/** HTTPS URL fetched by the bridge (~15s timeout, size/mime caps). */
+export interface CallbackAttachmentUrl {
+  filename?: string;
+  contentType?: string;
+  url: string;
+}
+
+export type CallbackAttachment = CallbackAttachmentData | CallbackAttachmentUrl;
+
+/**
+ * POST /callback JSON body.
+ * `content` optional when attachments length ≥ 1.
+ * Auth: Bearer CALLBACK_TOKEN or x-callback-token (unchanged).
+ */
 export interface CallbackPayload {
   channelId?: string;
   userId?: string;
-  content: string;
+  content?: string;
   replyToMessageId?: string;
   agentId?: string;
+  /** Max 10; each ≤8 MiB; total ≤25 MiB. */
+  attachments?: CallbackAttachment[];
+}
+
+/** Thin-wake attachment URL refs (inbound MessageCreate → sendPrompt). */
+export interface WakeAttachmentRef {
+  url: string;
+  filename?: string;
+  contentType?: string;
+  size?: number;
 }

@@ -1,11 +1,27 @@
-import express, { type Express, type Request, type Response } from "express";
-import type { Client, TextBasedChannel } from "discord.js";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import multer from "multer";
+import {
+  AttachmentBuilder,
+  type Client,
+  type TextBasedChannel,
+} from "discord.js";
 import type { AppConfig } from "./config.js";
 import type { CallbackPayload } from "./types.js";
+import {
+  AttachmentError,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENTS,
+  resolveJsonAttachments,
+  resolveMultipartFiles,
+  type ResolvedAttachment,
+} from "./attachments.js";
 
 const DISCORD_MAX = 1900;
+/** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
+const JSON_BODY_LIMIT = "12mb";
 
 function chunkText(text: string, max = DISCORD_MAX): string[] {
+  if (!text) return [];
   if (text.length <= max) return [text];
   const parts: string[] = [];
   let rest = text;
@@ -30,13 +46,107 @@ function extractToken(req: Request): string | undefined {
   return q?.trim();
 }
 
+function attachmentHttpStatus(code: string): number {
+  switch (code) {
+    case "unsupported_media_type":
+      return 415;
+    case "attachment_too_large":
+    case "too_many_attachments":
+    case "content_or_attachment_required":
+    case "invalid_attachment":
+    case "invalid_attachment_url":
+      return 400;
+    case "attachment_fetch_failed":
+      return 502;
+    default:
+      return 400;
+  }
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    files: MAX_ATTACHMENTS,
+    fileSize: MAX_ATTACHMENT_BYTES,
+    // field size for text fields stays small; binary is in files
+    fieldSize: 256 * 1024,
+  },
+});
+
+function maybeMultipart(req: Request, res: Response, next: NextFunction): void {
+  const ct = req.headers["content-type"] ?? "";
+  if (!ct.includes("multipart/form-data")) {
+    next();
+    return;
+  }
+  upload.any()(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    const e = err as { code?: string; message?: string };
+    if (e.code === "LIMIT_FILE_SIZE") {
+      res.status(400).json({ error: "attachment_too_large" });
+      return;
+    }
+    if (e.code === "LIMIT_FILE_COUNT" || e.code === "LIMIT_UNEXPECTED_FILE") {
+      res.status(400).json({ error: "too_many_attachments" });
+      return;
+    }
+    console.error("[callback] multer error:", e.message ?? err);
+    res.status(400).json({ error: "invalid_attachment" });
+  });
+}
+
+async function deliverToChannel(args: {
+  channel: TextBasedChannel;
+  content: string;
+  replyToMessageId?: string;
+  files: ResolvedAttachment[];
+}): Promise<{ messageId: string | undefined; chunks: number }> {
+  const { channel, content, replyToMessageId, files } = args;
+  const chunks = chunkText(content);
+  // discord.js AttachmentBuilder: name drives extension/MIME; we already validated mime.
+  const builders = files.map(
+    (f) => new AttachmentBuilder(f.buffer, { name: f.filename }),
+  );
+
+  // Attachment-only: one message with files, no text.
+  if (chunks.length === 0) {
+    const sent = await (channel as {
+      send: (p: unknown) => Promise<{ id: string }>;
+    }).send({
+      files: builders,
+      ...(replyToMessageId
+        ? { reply: { messageReference: replyToMessageId } }
+        : {}),
+    });
+    return { messageId: sent.id, chunks: 1 };
+  }
+
+  let firstId: string | undefined;
+  for (let i = 0; i < chunks.length; i++) {
+    const isFirst = i === 0;
+    const payload: Record<string, unknown> = { content: chunks[i] };
+    if (isFirst && builders.length) payload.files = builders;
+    if (isFirst && replyToMessageId) {
+      payload.reply = { messageReference: replyToMessageId };
+    }
+    const sent = await (channel as {
+      send: (p: unknown) => Promise<{ id: string }>;
+    }).send(payload);
+    if (!firstId) firstId = sent.id;
+  }
+  return { messageId: firstId, chunks: chunks.length };
+}
+
 export function createHttpServer(
   cfg: AppConfig,
   getDiscord: () => Client | null,
 ): Express {
   const app = express();
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "1mb" }));
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   app.get("/healthz", (_req, res) => {
     const discord = getDiscord();
@@ -54,68 +164,109 @@ export function createHttpServer(
     ? cfg.callbackPath
     : `/${cfg.callbackPath}`;
 
-  app.post(callbackPath, async (req: Request, res: Response) => {
-    if (!cfg.callbackToken) {
-      res.status(503).json({ error: "callback_token_not_configured" });
-      return;
-    }
-    const token = extractToken(req);
-    if (!token || token !== cfg.callbackToken) {
-      res.status(401).json({ error: "unauthorized" });
-      return;
-    }
-
-    const body = req.body as CallbackPayload;
-    if (!body || typeof body.content !== "string" || !body.content.trim()) {
-      res.status(400).json({ error: "content_required" });
-      return;
-    }
-    if (!body.channelId) {
-      res.status(400).json({ error: "channelId_required" });
-      return;
-    }
-
-    const discord = getDiscord();
-    if (!discord?.isReady()) {
-      res.status(503).json({ error: "discord_not_ready" });
-      return;
-    }
-
-    try {
-      const channel = await discord.channels.fetch(body.channelId);
-      if (!channel || !channel.isTextBased()) {
-        res.status(404).json({ error: "channel_not_found" });
+  app.post(
+    callbackPath,
+    maybeMultipart,
+    async (req: Request, res: Response) => {
+      if (!cfg.callbackToken) {
+        res.status(503).json({ error: "callback_token_not_configured" });
         return;
       }
-      const textChannel = channel as TextBasedChannel;
-      const chunks = chunkText(body.content);
-      let firstId: string | undefined;
-      for (let i = 0; i < chunks.length; i++) {
-        const payload: { content: string; reply?: { messageReference: string } } = {
-          content: chunks[i],
-        };
-        if (i === 0 && body.replyToMessageId) {
-          const sent = await (textChannel as {
-            send: (p: unknown) => Promise<{ id: string }>;
-          }).send({
-            content: chunks[i],
-            reply: { messageReference: body.replyToMessageId },
-          });
-          firstId = sent.id;
-        } else {
-          const sent = await (textChannel as {
-            send: (p: unknown) => Promise<{ id: string }>;
-          }).send(payload);
-          if (!firstId) firstId = sent.id;
-        }
+      const token = extractToken(req);
+      if (!token || token !== cfg.callbackToken) {
+        res.status(401).json({ error: "unauthorized" });
+        return;
       }
-      res.status(200).json({ ok: true, messageId: firstId, chunks: chunks.length });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[callback] deliver failed:", msg);
-      res.status(502).json({ error: "deliver_failed" });
-    }
-  });
+
+      const isMultipart = (req.headers["content-type"] ?? "").includes(
+        "multipart/form-data",
+      );
+
+      let channelId: string | undefined;
+      let content: string | undefined;
+      let replyToMessageId: string | undefined;
+      let files: ResolvedAttachment[] = [];
+
+      try {
+        if (isMultipart) {
+          const body = req.body as Record<string, unknown>;
+          channelId =
+            typeof body.channelId === "string" ? body.channelId : undefined;
+          content =
+            typeof body.content === "string" ? body.content : undefined;
+          replyToMessageId =
+            typeof body.replyToMessageId === "string"
+              ? body.replyToMessageId
+              : undefined;
+          type Uploaded = {
+            fieldname: string;
+            originalname: string;
+            mimetype: string;
+            buffer: Buffer;
+            size: number;
+          };
+          const uploaded = (req.files as Uploaded[] | undefined) ?? [];
+          files = resolveMultipartFiles(uploaded);
+        } else {
+          const body = req.body as CallbackPayload;
+          channelId = body?.channelId;
+          content = typeof body?.content === "string" ? body.content : undefined;
+          replyToMessageId = body?.replyToMessageId;
+          files = await resolveJsonAttachments(body?.attachments);
+        }
+      } catch (err) {
+        if (err instanceof AttachmentError) {
+          res.status(attachmentHttpStatus(err.code)).json({ error: err.code });
+          return;
+        }
+        throw err;
+      }
+
+      const trimmed = (content ?? "").trim();
+      if (!trimmed && files.length === 0) {
+        res.status(400).json({ error: "content_or_attachment_required" });
+        return;
+      }
+      if (!channelId) {
+        res.status(400).json({ error: "channelId_required" });
+        return;
+      }
+
+      const discord = getDiscord();
+      if (!discord?.isReady()) {
+        res.status(503).json({ error: "discord_not_ready" });
+        return;
+      }
+
+      try {
+        const channel = await discord.channels.fetch(channelId);
+        if (!channel || !channel.isTextBased()) {
+          res.status(404).json({ error: "channel_not_found" });
+          return;
+        }
+        const result = await deliverToChannel({
+          channel: channel as TextBasedChannel,
+          content: trimmed,
+          replyToMessageId,
+          files,
+        });
+        res.status(200).json({
+          ok: true,
+          messageId: result.messageId,
+          chunks: result.chunks,
+          attachments: files.length,
+        });
+      } catch (err) {
+        if (err instanceof AttachmentError) {
+          res.status(attachmentHttpStatus(err.code)).json({ error: err.code });
+          return;
+        }
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[callback] deliver failed:", msg);
+        res.status(502).json({ error: "deliver_failed" });
+      }
+    },
+  );
 
   return app;
 }

@@ -2,17 +2,16 @@
 
 Thin **Discord Gateway → Grok Bot `sendPrompt` → Discord callback** bridge.
 
-Portfolio repo for Matthew Rutledge. Designed for host **servergen1** (`192.168.86.236`) under `/opt/sites/discord-fleet-wake`.
+Portfolio repo for Matthew Rutledge. Live host **servergen1** (`192.168.86.236`) under `/opt/sites/grok-bot-discord-bridge`.
 
-**Still no live Discord** until a real bot token is placed in host `.env` (vault key `DISCORD_FLEET_WAKE` — document later). Without a real token the process exits cleanly after binding HTTP briefly; keep Compose **stopped** until go-live.
-
-OpenClaw Discord remains untouched (already disabled).
+OpenClaw Discord remains untouched (already disabled). Bot identity: **Bender**.
 
 ## Architecture
 
 ```
 Discord Gateway
     │  MessageCreate (deny-by-default authz)
+    │  optional attachment URL refs in thin wake JSON `a`
     ▼
 channel-map.json  →  agentId (+ optional per-row sendPrompt URL)
     │
@@ -27,10 +26,10 @@ Grok Bot agent works…
     ▼
 POST http://127.0.0.1:18083/callback
     Authorization: Bearer <CALLBACK_TOKEN>
-    body: { "channelId": "...", "content": "...", "replyToMessageId"?: "..." }
+    JSON text and/or attachments, or multipart/form-data
     │
     ▼
-Discord channel message
+Discord channel / DM message (text + files)
 ```
 
 Local HTTP (loopback only via Compose publish):
@@ -38,7 +37,7 @@ Local HTTP (loopback only via Compose publish):
 | Path | Method | Purpose |
 |------|--------|---------|
 | `/healthz` | GET | Liveness + whether Discord is ready |
-| `/callback` | POST | Agent → Discord delivery (token required) |
+| `/callback` | POST | Agent → Discord delivery (token required; text and/or media) |
 
 ## Security model (deny-by-default)
 
@@ -60,7 +59,7 @@ Evaluation order for **guild** messages:
 
 Owner id seeds pairing approvals. No agent is invoked until an allow path succeeds.
 
-### Seed (OpenClaw shape — config only, not live)
+### Seed (OpenClaw shape — config only)
 
 | Field | Value |
 |-------|--------|
@@ -68,8 +67,6 @@ Owner id seeds pairing approvals. No agent is invoked until an allow path succee
 | Users | `339560375924031498`, `354095575282614272` |
 | Owner | `339560375924031498` |
 | `requireMention` | `false` for that guild |
-
-These IDs are **still denied in practice** until a real `DISCORD_BOT_TOKEN` is present and the service is started.
 
 ## Env
 
@@ -79,33 +76,41 @@ See [`.env.example`](./.env.example). Notable names:
 - `DISCORD_GUILD_ID`, `DISCORD_ALLOWFROM`, `DISCORD_ALLOW_ROLES`, `DISCORD_ALLOW_CHANNELS`, `DISCORD_OWNER_ID`, `DISCORD_DM_POLICY`
 - `GROK_BOT_SENDPROMPT_URL` — default `http://host.docker.internal:1340/api/sendPrompt` on Docker hosts that support it (or use LAN IP of the Grok Bot computer)
 - `GROK_BOT_GATEWAY_TOKEN` — optional Bearer for sendPrompt
-- `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN`
+- `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN` (vault **`DISCORD_BRIDGE.callback_token`**)
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
 
-**Git never gets real secrets** — only `.env.example`. Host `.env` is local; vault key name to file later: `DISCORD_FLEET_WAKE`.
+**Git never gets real secrets** — only `.env.example`. Host `.env` is local.
 
-## channel-map schema
+## Inbound wake (MessageCreate → sendPrompt)
 
-```json
-{
-  "version": 1,
-  "defaultSendPromptUrl": null,
-  "channels": [
-    {
-      "enabled": false,
-      "channelId": "123",
-      "label": "optional",
-      "agentId": "",
-      "sendPromptUrl": null,
-      "requireMention": false
-    }
-  ]
-}
+Prompt shape (unchanged header + thin JSON; optional attachments):
+
+```
+d:<slug>:<messageId>
+{"id":"d:<slug>:<messageId>","g":"<guildId|null>","u":"<userId>","map":"<alias>","a":[{"url":"...","filename":"...","contentType":"...","size":123}]}
+<human text>
 ```
 
-Stub rows ship **disabled**. Enable a row only after choosing a real `agentId`.
+- Text-only wakes omit `a` (same as before).
+- When the Discord message has attachments, thin JSON includes **`a`**: an array of URL refs (not base64) using Discord CDN `attachment.url` (fallback `proxyURL`), plus optional `filename`, `contentType`, `size`.
+- The same refs are also placed on sendPrompt **`metadata.attachments`**.
+- Attachment-only messages (no text) still wake.
+- Cap: first 10 attachments.
 
-## Callback contract
+### CDN lifetime caveat
+
+Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** after the wake. Do not store these URLs long-term expecting them to stay valid.
+
+## Callback contract (outbound)
+
+Auth (unchanged):
+
+- `Authorization: Bearer <CALLBACK_TOKEN>`, or
+- header `x-callback-token: <CALLBACK_TOKEN>`
+
+### JSON (`Content-Type: application/json`)
+
+Backward compatible text-only body still works. `content` is **optional** when there is ≥1 attachment.
 
 ```http
 POST /callback
@@ -114,14 +119,96 @@ Content-Type: application/json
 
 {
   "channelId": "<discord channel snowflake>",
-  "content": "markdown-ish text to post",
-  "replyToMessageId": "<optional original message id>",
+  "content": "optional markdown-ish text",
+  "replyToMessageId": "<optional>",
   "userId": "<optional>",
-  "agentId": "<optional>"
+  "agentId": "<optional>",
+  "attachments": [
+    { "filename": "shot.png", "contentType": "image/png", "data": "<base64 no data-URL prefix>" },
+    { "filename": "remote.jpg", "contentType": "image/jpeg", "url": "https://example.com/a.jpg" }
+  ]
 }
 ```
 
-Success: `{ "ok": true, "messageId": "...", "chunks": N }`. Long content is split near Discord’s limit.
+Attachment item (exactly one of `data` or `url`):
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `filename` | required for `data`; optional for `url` | sanitized |
+| `contentType` | optional | guessed from filename / fetch headers if omitted |
+| `data` | xor `url` | raw base64 (data-URL prefix stripped if present) |
+| `url` | xor `data` | **https only**; bridge fetches (~15s timeout) |
+
+### multipart/form-data
+
+| Part / field | Notes |
+|--------------|-------|
+| `channelId` | required |
+| `content` | optional text |
+| `replyToMessageId` | optional |
+| `files` or `files[]` | file parts (max 10) |
+
+Prefer multipart for large binaries. JSON body limit is **12mb** (base64 overhead); multipart uses multer memory limits.
+
+### Limits
+
+| Limit | Value |
+|-------|-------|
+| Max files | 10 |
+| Max per file | 8 MiB |
+| Max total | 25 MiB |
+| Allowed MIME | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `video/mp4`, `video/webm`, `audio/mpeg`, `audio/ogg`, `audio/wav`, `application/pdf`, `text/plain` |
+
+Else **415** `unsupported_media_type`.
+
+### Delivery
+
+Uses discord.js `channel.send({ content?, files: AttachmentBuilder[], reply? })`. Attachments go on the **first** chunk/message; long text is still chunked (~1900 chars).
+
+Success: `{ "ok": true, "messageId": "...", "chunks": N, "attachments": N }`.
+
+### Error codes
+
+| Code | When |
+|------|------|
+| `content_or_attachment_required` | neither text nor files (replaces strict `content_required`) |
+| `channelId_required` | missing channel |
+| `attachment_too_large` | per-file or total over cap |
+| `too_many_attachments` | >10 files |
+| `unsupported_media_type` | MIME not allowlisted (HTTP 415) |
+| `attachment_fetch_failed` | URL fetch failed / timed out |
+| `unauthorized` / `discord_not_ready` / `channel_not_found` / `deliver_failed` | unchanged |
+
+### curl examples
+
+Text only (legacy):
+
+```bash
+curl -sS -X POST "http://127.0.0.1:18083/callback" \
+  -H "Authorization: Bearer $CALLBACK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"channelId":"1509247663646965770","content":"hello from bridge"}'
+```
+
+JSON + tiny PNG (1×1):
+
+```bash
+B64=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==
+curl -sS -X POST "http://127.0.0.1:18083/callback" \
+  -H "Authorization: Bearer $CALLBACK_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"channelId\":\"1509247663646965770\",\"content\":\"png smoke\",\"attachments\":[{\"filename\":\"1x1.png\",\"contentType\":\"image/png\",\"data\":\"$B64\"}]}"
+```
+
+Multipart:
+
+```bash
+curl -sS -X POST "http://127.0.0.1:18083/callback" \
+  -H "Authorization: Bearer $CALLBACK_TOKEN" \
+  -F "channelId=1509247663646965770" \
+  -F "content=multipart smoke" \
+  -F "files=@./shot.png;type=image/png"
+```
 
 ## Ports
 
@@ -130,38 +217,24 @@ Success: `{ "ok": true, "messageId": "...", "chunks": N }`. Long content is spli
 | `18083` | `127.0.0.1` on host | Bridge HTTP (`/healthz`, `/callback`) |
 | `1340` | Grok Bot computer (not this container) | `POST /api/sendPrompt` |
 
-Matches other `/opt/sites` apps (localhost-only publish, Cloudflare Tunnel if ever exposed).
-
 ## Docker Compose
 
 ```bash
-cd /opt/sites/discord-fleet-wake
-cp .env.example .env
-# Fill secrets from vault DISCORD_FLEET_WAKE — do not start until token is real
-docker compose config    # validate only
-# Go live:
+cd /opt/sites/grok-bot-discord-bridge
+# Preserve live .env + config/security.json + config/channel-map.json
 docker compose up -d --build
+curl -sS http://127.0.0.1:18083/healthz   # discordReady: true
 ```
-
-`restart: unless-stopped`. Without a real token the entrypoint exits with code `2` so a premature `up` will restart-loop — **leave the stack stopped** until `.env` is filled.
 
 ## Local develop
 
 ```bash
 npm ci
+npm test
 npm run build
 cp .env.example .env
 HTTP_ONLY=1 HTTP_BIND=127.0.0.1 npm start   # HTTP only, no Discord
 ```
-
-## Go live checklist
-
-1. Create Discord application/bot; invite to guild with message content intent.
-2. Put token + callback token in host `.env` (vault `DISCORD_FLEET_WAKE`).
-3. Confirm Grok Bot computer accepts `POST :1340/api/sendPrompt` and can reach `CALLBACK_BASE_URL`.
-4. Enable a `channel-map.json` row with a real `agentId`.
-5. `docker compose up -d --build` on servergen1.
-6. `curl -sS http://127.0.0.1:18083/healthz` → `discordReady: true`.
 
 ## License
 

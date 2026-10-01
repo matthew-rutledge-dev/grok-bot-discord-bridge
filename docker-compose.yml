@@ -2,16 +2,16 @@
 # Public Discord Gateway outbound; callback binds 127.0.0.1:18083.
 #
 # Do NOT start live until .env has a real DISCORD_BOT_TOKEN.
-# Prefer: fill .env from vault key DISCORD_FLEET_WAKE, then:
+# Prefer: fill .env from vault DISCORD / DISCORD_BRIDGE, then:
 #   docker compose up -d --build
 #
 # Without a real token the process exits cleanly (code 2). Keep the stack
 # stopped until ready — a premature `up` will restart-loop.
 
 services:
-  discord-fleet-wake:
+  grok-bot-discord-bridge:
     build: .
-    container_name: discord_fleet_wake
+    container_name: grok_bot_discord_bridge
     restart: unless-stopped
     ports:
       - "127.0.0.1:18083:18083"

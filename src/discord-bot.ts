@@ -14,6 +14,10 @@ import {
   pairUser,
   stripBotMention,
 } from "./security.js";
+import {
+  wakeAttachmentRefsFromDiscord,
+  type WakeAttachmentRef,
+} from "./attachments.js";
 
 export function createDiscordClient(): Client {
   return new Client({
@@ -27,7 +31,7 @@ export function createDiscordClient(): Client {
   });
 }
 
-/** Pure wake prompt: `d:<slug>:<message.id>`, thin JSON `{id,g,u,map}`, human text. */
+/** Pure wake prompt: `d:<slug>:<message.id>`, thin JSON `{id,g,u,map,a?}`, human text. */
 export function formatWakePrompt(args: {
   slug: string;
   messageId: string;
@@ -37,21 +41,33 @@ export function formatWakePrompt(args: {
   userTag: string;
   alias: string;
   cleaned: string;
+  attachments?: WakeAttachmentRef[];
 }): string {
   const plugId = `d:${args.slug}:${args.messageId}`;
-  const thin = JSON.stringify({
+  const thinObj: Record<string, unknown> = {
     id: plugId,
     g: args.guildId,
     u: args.userId,
     map: args.alias,
-  });
+  };
+  if (args.attachments && args.attachments.length > 0) {
+    // Short key `a` keeps the thin envelope small; URL refs only (no base64).
+    thinObj.a = args.attachments.map((r) => {
+      const item: Record<string, unknown> = { url: r.url };
+      if (r.filename) item.filename = r.filename;
+      if (r.contentType) item.contentType = r.contentType;
+      if (typeof r.size === "number") item.size = r.size;
+      return item;
+    });
+  }
+  const thin = JSON.stringify(thinObj);
   return [plugId, thin, args.cleaned].join("\n");
 }
 
 function buildPrompt(
   message: Message,
   cleaned: string,
-  opts: { slug: string; alias: string },
+  opts: { slug: string; alias: string; attachments?: WakeAttachmentRef[] },
 ): string {
   return formatWakePrompt({
     slug: opts.slug,
@@ -62,6 +78,7 @@ function buildPrompt(
     userTag: message.author.tag,
     alias: opts.alias,
     cleaned,
+    attachments: opts.attachments,
   });
 }
 
@@ -145,26 +162,33 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         message.content,
         message.client.user?.id ?? null,
       );
-      if (!cleaned) return;
+      const attachmentRefs = wakeAttachmentRefsFromDiscord(message);
+      // Text-only wakes unchanged; attachment-only messages also wake.
+      if (!cleaned && attachmentRefs.length === 0) return;
 
       const prompt = buildPrompt(message, cleaned, {
         slug: wakeSlug,
         alias: wakeAlias,
+        attachments: attachmentRefs,
       });
+      const metadata: Record<string, unknown> = {
+        source: "discord-bridge",
+        discordMessageId: message.id,
+        discordChannelId: message.channelId,
+        discordUserId: message.author.id,
+        discordGuildId: message.guild?.id ?? null,
+        callbackBaseUrl: cfg.callbackBaseUrl,
+        callbackPath: cfg.callbackPath,
+      };
+      if (attachmentRefs.length > 0) {
+        metadata.attachments = attachmentRefs;
+      }
       const result = await sendPrompt(
         sendUrl,
         {
           agentId,
           prompt,
-          metadata: {
-            source: "discord-bridge",
-            discordMessageId: message.id,
-            discordChannelId: message.channelId,
-            discordUserId: message.author.id,
-            discordGuildId: message.guild?.id ?? null,
-            callbackBaseUrl: cfg.callbackBaseUrl,
-            callbackPath: cfg.callbackPath,
-          },
+          metadata,
         },
         cfg.gatewayToken || undefined,
       );
