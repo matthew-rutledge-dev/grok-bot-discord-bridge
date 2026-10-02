@@ -15,6 +15,12 @@ import {
   resolveMultipartFiles,
   type ResolvedAttachment,
 } from "./attachments.js";
+import {
+  elapsedMs,
+  logTiming,
+  monoMs,
+  takeIdleGapMs,
+} from "./timing.js";
 
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
@@ -168,15 +174,24 @@ export function createHttpServer(
     callbackPath,
     maybeMultipart,
     async (req: Request, res: Response) => {
+      const tCallback = monoMs();
       if (!cfg.callbackToken) {
         res.status(503).json({ error: "callback_token_not_configured" });
         return;
       }
+      const tAuth = monoMs();
       const token = extractToken(req);
       if (!token || token !== cfg.callbackToken) {
+        logTiming({
+          stage: "callback_auth",
+          ms: elapsedMs(tAuth),
+          ok: false,
+        });
         res.status(401).json({ error: "unauthorized" });
         return;
       }
+      const authMs = elapsedMs(tAuth);
+      // replyToMessageId known after body parse — re-emit auth with msg= below.
 
       const isMultipart = (req.headers["content-type"] ?? "").includes(
         "multipart/form-data",
@@ -187,6 +202,7 @@ export function createHttpServer(
       let replyToMessageId: string | undefined;
       let files: ResolvedAttachment[] = [];
 
+      const tResolve = monoMs();
       try {
         if (isMultipart) {
           const body = req.body as Record<string, unknown>;
@@ -215,6 +231,25 @@ export function createHttpServer(
           files = await resolveJsonAttachments(body?.attachments);
         }
       } catch (err) {
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_auth",
+          ms: authMs,
+          ok: true,
+        });
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_resolve",
+          ms: elapsedMs(tResolve),
+          attachments: files.length,
+          ok: false,
+        });
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_total",
+          ms: elapsedMs(tCallback),
+          ok: false,
+        });
         if (err instanceof AttachmentError) {
           res.status(attachmentHttpStatus(err.code)).json({ error: err.code });
           return;
@@ -222,25 +257,75 @@ export function createHttpServer(
         throw err;
       }
 
+      const idleMs = takeIdleGapMs(replyToMessageId);
+      logTiming({
+        msg: replyToMessageId,
+        stage: "callback_auth",
+        ms: authMs,
+        ok: true,
+      });
+      logTiming({
+        msg: replyToMessageId,
+        stage: "callback_resolve",
+        ms: elapsedMs(tResolve),
+        attachments: files.length,
+        ok: true,
+      });
+
       const trimmed = (content ?? "").trim();
       if (!trimmed && files.length === 0) {
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_total",
+          ms: elapsedMs(tCallback),
+          idle_ms: idleMs,
+          ok: false,
+        });
         res.status(400).json({ error: "content_or_attachment_required" });
         return;
       }
       if (!channelId) {
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_total",
+          ms: elapsedMs(tCallback),
+          idle_ms: idleMs,
+          ok: false,
+        });
         res.status(400).json({ error: "channelId_required" });
         return;
       }
 
       const discord = getDiscord();
       if (!discord?.isReady()) {
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_total",
+          ms: elapsedMs(tCallback),
+          idle_ms: idleMs,
+          ok: false,
+        });
         res.status(503).json({ error: "discord_not_ready" });
         return;
       }
 
+      const tDeliver = monoMs();
       try {
         const channel = await discord.channels.fetch(channelId);
         if (!channel || !channel.isTextBased()) {
+          logTiming({
+            msg: replyToMessageId,
+            stage: "callback_deliver",
+            ms: elapsedMs(tDeliver),
+            ok: false,
+          });
+          logTiming({
+            msg: replyToMessageId,
+            stage: "callback_total",
+            ms: elapsedMs(tCallback),
+            idle_ms: idleMs,
+            ok: false,
+          });
           res.status(404).json({ error: "channel_not_found" });
           return;
         }
@@ -250,6 +335,21 @@ export function createHttpServer(
           replyToMessageId,
           files,
         });
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_deliver",
+          ms: elapsedMs(tDeliver),
+          ok: true,
+          chunks: result.chunks,
+          attachments: files.length,
+        });
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_total",
+          ms: elapsedMs(tCallback),
+          idle_ms: idleMs,
+          ok: true,
+        });
         res.status(200).json({
           ok: true,
           messageId: result.messageId,
@@ -257,6 +357,19 @@ export function createHttpServer(
           attachments: files.length,
         });
       } catch (err) {
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_deliver",
+          ms: elapsedMs(tDeliver),
+          ok: false,
+        });
+        logTiming({
+          msg: replyToMessageId,
+          stage: "callback_total",
+          ms: elapsedMs(tCallback),
+          idle_ms: idleMs,
+          ok: false,
+        });
         if (err instanceof AttachmentError) {
           res.status(attachmentHttpStatus(err.code)).json({ error: err.code });
           return;

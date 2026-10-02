@@ -18,6 +18,13 @@ import {
   wakeAttachmentRefsFromDiscord,
   type WakeAttachmentRef,
 } from "./attachments.js";
+import {
+  elapsedMs,
+  hopId,
+  logTiming,
+  markSendPromptAccepted,
+  monoMs,
+} from "./timing.js";
 
 export function createDiscordClient(): Client {
   return new Client({
@@ -88,6 +95,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
   });
 
   client.on(Events.MessageCreate, async (message) => {
+    const t0 = monoMs();
     try {
       if (message.author.bot) return;
 
@@ -158,6 +166,16 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         return;
       }
 
+      const hop = hopId(wakeSlug, message.id);
+      logTiming({
+        msg: message.id,
+        hop,
+        stage: "authz",
+        ms: elapsedMs(t0),
+        ok: true,
+      });
+
+      const tWake = monoMs();
       const cleaned = stripBotMention(
         message.content,
         message.client.user?.id ?? null,
@@ -183,22 +201,51 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
       if (attachmentRefs.length > 0) {
         metadata.attachments = attachmentRefs;
       }
-      const result = await sendPrompt(
-        sendUrl,
-        {
-          agentId,
-          prompt,
-          metadata,
-        },
-        cfg.gatewayToken || undefined,
-      );
+      logTiming({
+        msg: message.id,
+        hop,
+        stage: "build_wake",
+        ms: elapsedMs(tWake),
+        attachments: attachmentRefs.length,
+      });
 
-      if (!result.accepted) {
-        console.warn(`[sendPrompt] not accepted:`, result);
-        await message.react("⚠️").catch(() => undefined);
-        return;
+      const tSend = monoMs();
+      let accepted = false;
+      try {
+        const result = await sendPrompt(
+          sendUrl,
+          {
+            agentId,
+            prompt,
+            metadata,
+          },
+          cfg.gatewayToken || undefined,
+        );
+        accepted = Boolean(result.accepted);
+        logTiming({
+          msg: message.id,
+          hop,
+          stage: "sendPrompt",
+          ms: elapsedMs(tSend),
+          ok: accepted,
+        });
+        if (!accepted) {
+          console.warn(`[sendPrompt] not accepted:`, result);
+          await message.react("⚠️").catch(() => undefined);
+          return;
+        }
+        markSendPromptAccepted(message.id);
+        await message.react("✅").catch(() => undefined);
+      } catch (sendErr) {
+        logTiming({
+          msg: message.id,
+          hop,
+          stage: "sendPrompt",
+          ms: elapsedMs(tSend),
+          ok: false,
+        });
+        throw sendErr;
       }
-      await message.react("✅").catch(() => undefined);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[discord] handler error:`, msg);

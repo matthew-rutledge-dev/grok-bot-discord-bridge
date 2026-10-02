@@ -239,3 +239,20 @@ HTTP_ONLY=1 HTTP_BIND=127.0.0.1 npm start   # HTTP only, no Discord
 ## License
 
 Private portfolio use; no warranty.
+
+## Timing logs
+
+Structured bottleneck timing (no tokens / no message content):
+
+```
+[timing] msg=<discordMessageId> hop=d:<slug>:<id> stage=authz ms=12 ok=true
+[timing] msg=… hop=… stage=build_wake ms=1 attachments=2
+[timing] msg=… hop=… stage=sendPrompt ms=45 ok=true
+[timing] msg=<replyToMessageId> stage=callback_auth ms=0 ok=true
+[timing] msg=… stage=callback_resolve ms=120 attachments=1 ok=true
+[timing] msg=… stage=callback_deliver ms=80 ok=true chunks=1 attachments=1
+[timing] msg=… stage=callback_total ms=210 idle_ms=3400 ok=true
+```
+
+`idle_ms` is wall-clock gap from sendPrompt accept → callback, joined on `replyToMessageId` when present.
+
