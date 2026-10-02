@@ -7,6 +7,8 @@ import {
 } from "discord.js";
 import type { AppConfig } from "./config.js";
 import { sendPrompt } from "./grok-client.js";
+import { invokeLocalPlanner, isLocalPlannerRow } from "./local-planner.js";
+import type { ChannelMapRow } from "./types.js";
 import {
   authorizeDm,
   authorizeGuildMessage,
@@ -127,6 +129,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
       let sendUrl: string | undefined;
       let wakeSlug = "dm";
       let wakeAlias = "";
+      let mapRow: ChannelMapRow | undefined;
 
       if (message.guild) {
         const authz = authorizeGuildMessage(cfg, message);
@@ -140,6 +143,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         }
         agentId = authz.agentId;
         sendUrl = authz.sendPromptUrl;
+        mapRow = authz.mapRow;
         wakeSlug = authz.mapRow?.slug || authz.mapRow?.channelId || "unknown";
         wakeAlias = authz.mapRow?.alias || authz.agentId || "";
       } else {
@@ -208,6 +212,46 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         ms: elapsedMs(tWake),
         attachments: attachmentRefs.length,
       });
+
+      if (isLocalPlannerRow(mapRow)) {
+        const tLocal = monoMs();
+        try {
+          const local = await invokeLocalPlanner(cfg, {
+            userPrompt: cleaned || "(attachment)",
+            imagePath: attachmentRefs[0]?.url ?? "",
+            channelId: message.channelId,
+            slug: wakeSlug,
+            messageId: message.id,
+            dryRun: false,
+          });
+          logTiming({
+            msg: message.id,
+            hop,
+            stage: "localPlanner",
+            ms: elapsedMs(tLocal),
+            ok: local.ok,
+            exit: local.exitCode ?? "",
+          });
+          if (!local.ok) {
+            console.warn(
+              `[local-planner] not ok msg=${message.id} status=${local.status} exit=${local.exitCode ?? ""}`,
+            );
+            await message.react("⚠️").catch(() => undefined);
+            return;
+          }
+          await message.react("✅").catch(() => undefined);
+        } catch (localErr) {
+          logTiming({
+            msg: message.id,
+            hop,
+            stage: "localPlanner",
+            ms: elapsedMs(tLocal),
+            ok: false,
+          });
+          throw localErr;
+        }
+        return;
+      }
 
       const tSend = monoMs();
       let accepted = false;

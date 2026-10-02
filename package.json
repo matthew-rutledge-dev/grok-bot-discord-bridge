@@ -1,6 +1,6 @@
 {
   "name": "grok-bot-discord-bridge",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "Thin Discord Gateway \u2192 Grok Bot sendPrompt bridge (deny-by-default)",
   "type": "module",
@@ -12,7 +12,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts"
+    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts src/local-planner.test.ts"
   },
   "dependencies": {
     "discord.js": "^14.16.3",

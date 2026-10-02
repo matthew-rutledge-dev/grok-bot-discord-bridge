@@ -102,6 +102,19 @@ d:<slug>:<messageId>
 
 Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** after the wake. Do not store these URLs long-term expecting them to stay valid.
 
+## Local planner hop (optional, 0.2.5)
+
+Default is unchanged: a channel-map row without the opt-in fields still calls Grok Bot `sendPrompt`.
+
+A row opts into the local planner only when all three are set:
+
+- `primary_llm`: `"local"`
+- `wake_agent`: `false`
+- `local_handler`: `"rumble-pixel-planner"`
+
+Those rows do **not** call `sendPrompt`. The bridge POSTs `{ userPrompt, imagePath, channelId, slug, messageId, dryRun }` to `LOCAL_PLANNER_URL` with `Authorization: Bearer <LOCAL_PLANNER_TOKEN>`.
+Leave `agentId` as the real id (do not invent one). If the URL or token is blank, that row fails closed and still does not `sendPrompt`.
+
 ## Callback contract (outbound)
 
 Auth (**header-only** as of **0.2.4** — query `?token=` removed):

@@ -49,6 +49,9 @@ export interface AppConfig {
   httpOnly: boolean;
   channelMap: ChannelMapFile;
   security: SecurityFile;
+  /** Optional. Blank keeps every row on sendPrompt unless a row opts in and then fails closed. */
+  localPlannerUrl: string;
+  localPlannerToken: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -99,5 +102,7 @@ export function loadConfig(): AppConfig {
     httpOnly: env("HTTP_ONLY", "0") === "1",
     channelMap,
     security,
+    localPlannerUrl: env("LOCAL_PLANNER_URL"),
+    localPlannerToken: env("LOCAL_PLANNER_TOKEN"),
   };
 }

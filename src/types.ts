@@ -9,6 +9,14 @@ export interface ChannelMapRow {
   agentId: string;
   sendPromptUrl?: string | null;
   requireMention?: boolean;
+  /**
+   * Opt-in only. Unset (fresh install) keeps sendPrompt.
+   * Local planner hop requires all three: primary_llm "local",
+   * wake_agent false, local_handler "rumble-pixel-planner".
+   */
+  primary_llm?: string;
+  wake_agent?: boolean;
+  local_handler?: string;
 }
 
 export interface ChannelMapFile {
