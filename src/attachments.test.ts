@@ -14,7 +14,37 @@ describe("attachments allowlist", () => {
   it("includes expected mimes", () => {
     assert.ok(ALLOWED_MIME.has("image/png"));
     assert.ok(ALLOWED_MIME.has("application/pdf"));
+    assert.ok(ALLOWED_MIME.has("text/plain"));
+    assert.ok(
+      ALLOWED_MIME.has(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    );
+    assert.ok(ALLOWED_MIME.has("application/json"));
+    assert.ok(ALLOWED_MIME.has("text/markdown"));
+    assert.ok(ALLOWED_MIME.has("text/csv"));
     assert.equal(ALLOWED_MIME.has("application/zip"), false);
+    assert.equal(ALLOWED_MIME.has("application/x-msdownload"), false);
+    assert.equal(ALLOWED_MIME.has("application/x-iso9660-image"), false);
+  });
+
+  it("guesses office/code mime from filename when octet-stream", () => {
+    const data = Buffer.from("hello").toString("base64");
+    const r = decodeBase64Attachment({
+      filename: "notes.md",
+      contentType: "application/octet-stream",
+      data,
+    });
+    assert.equal(r.contentType, "text/markdown");
+    const docx = decodeBase64Attachment({
+      filename: "report.docx",
+      contentType: "application/octet-stream",
+      data,
+    });
+    assert.equal(
+      docx.contentType,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
   });
 });
 

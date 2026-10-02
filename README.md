@@ -157,7 +157,7 @@ Prefer multipart for large binaries. JSON body limit is **12mb** (base64 overhea
 | Max files | 10 |
 | Max per file | 8 MiB |
 | Max total | 25 MiB |
-| Allowed MIME | `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `video/mp4`, `video/webm`, `audio/mpeg`, `audio/ogg`, `audio/wav`, `application/pdf`, `text/plain` |
+| Allowed MIME | **Images/media:** `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `video/mp4`, `video/webm`, `audio/mpeg`, `audio/ogg`, `audio/wav`, `application/pdf`, `text/plain`. **Office:** `docx`/`xlsx`/`pptx` OOXML, legacy `doc`/`xls`/`ppt`, ODF `odt`/`ods`/`odp`, `application/rtf`, `text/csv`, `text/tab-separated-values`. **Text/code:** `text/markdown`, `text/html`, `text/css`, `text/javascript`, `application/javascript`, `application/json`, `application/xml`, `text/xml`, `application/x-yaml`, `text/yaml`, `text/x-python`, `application/x-python`, `text/x-shellscript`, `application/x-sh`, `application/x-powershell`, `text/x-powershell`. Extension fallback when `contentType` missing/`application/octet-stream`: `.md` `.json` `.xml` `.yml` `.yaml` `.py` `.ps1` `.sh` `.bash` `.csv` `.tsv` `.html` `.css` `.js` `.ts` `.docx` `.xlsx` `.pptx` `.doc` `.xls` `.ppt` `.odt` `.ods` `.odp` `.rtf` (plus existing image/media/pdf/txt). **Still denied:** zip/exe/dmg/iso and other archives/binaries. |
 
 Else **415** `unsupported_media_type`.
 

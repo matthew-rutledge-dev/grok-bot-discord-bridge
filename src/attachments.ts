@@ -6,6 +6,7 @@ export const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024; // 25 MiB
 export const ATTACHMENT_FETCH_TIMEOUT_MS = 15_000;
 
 export const ALLOWED_MIME = new Set([
+  // images / media (existing)
   "image/png",
   "image/jpeg",
   "image/gif",
@@ -17,6 +18,36 @@ export const ALLOWED_MIME = new Set([
   "audio/wav",
   "application/pdf",
   "text/plain",
+  // office documents
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/msword",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/rtf",
+  "text/csv",
+  "text/tab-separated-values",
+  // text / code
+  "text/markdown",
+  "text/html",
+  "text/css",
+  "text/javascript",
+  "application/javascript",
+  "application/json",
+  "application/xml",
+  "text/xml",
+  "application/x-yaml",
+  "text/yaml",
+  "text/x-python",
+  "application/x-python",
+  "text/x-shellscript",
+  "application/x-sh",
+  "application/x-powershell",
+  "text/x-powershell",
 ]);
 
 export type AttachmentErrorCode =
@@ -63,29 +94,67 @@ function stripDataUrlPrefix(data: string): string {
   return m ? m[1] : data.trim();
 }
 
+/** Extension → MIME fallback when contentType is missing or application/octet-stream. */
+const EXT_MIME: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mp3": "audio/mpeg",
+  ".mpeg": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".wav": "audio/wav",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".json": "application/json",
+  ".xml": "application/xml",
+  ".yml": "application/x-yaml",
+  ".yaml": "application/x-yaml",
+  ".py": "text/x-python",
+  ".ps1": "application/x-powershell",
+  ".sh": "application/x-sh",
+  ".bash": "application/x-sh",
+  ".csv": "text/csv",
+  ".tsv": "text/tab-separated-values",
+  ".html": "text/html",
+  ".css": "text/css",
+  ".js": "text/javascript",
+  ".ts": "text/plain",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".doc": "application/msword",
+  ".xls": "application/vnd.ms-excel",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".odt": "application/vnd.oasis.opendocument.text",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".odp": "application/vnd.oasis.opendocument.presentation",
+  ".rtf": "application/rtf",
+};
+
 function guessMimeFromFilename(filename: string): string | undefined {
   const lower = filename.toLowerCase();
-  if (lower.endsWith(".png")) return "image/png";
-  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
-  if (lower.endsWith(".gif")) return "image/gif";
-  if (lower.endsWith(".webp")) return "image/webp";
-  if (lower.endsWith(".mp4")) return "video/mp4";
-  if (lower.endsWith(".webm")) return "video/webm";
-  if (lower.endsWith(".mp3") || lower.endsWith(".mpeg")) return "audio/mpeg";
-  if (lower.endsWith(".ogg") || lower.endsWith(".oga")) return "audio/ogg";
-  if (lower.endsWith(".wav")) return "audio/wav";
-  if (lower.endsWith(".pdf")) return "application/pdf";
-  if (lower.endsWith(".txt")) return "text/plain";
-  return undefined;
+  const dot = lower.lastIndexOf(".");
+  if (dot < 0) return undefined;
+  return EXT_MIME[lower.slice(dot)];
 }
 
 function normalizeMime(raw: string | undefined, filename: string): string {
   const base = (raw ?? "").split(";")[0].trim().toLowerCase();
-  if (base && ALLOWED_MIME.has(base)) return base;
+  // Prefer allowlisted declared type (except opaque octet-stream → extension map).
+  if (base && base !== "application/octet-stream" && ALLOWED_MIME.has(base)) {
+    return base;
+  }
   // jpeg alias
   if (base === "image/jpg") return "image/jpeg";
   const guessed = guessMimeFromFilename(filename);
   if (guessed) return guessed;
+  if (base && ALLOWED_MIME.has(base)) return base;
   return base || "application/octet-stream";
 }
 
