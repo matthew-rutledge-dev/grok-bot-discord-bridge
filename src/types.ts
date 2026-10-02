@@ -77,7 +77,7 @@ export type CallbackAttachment = CallbackAttachmentData | CallbackAttachmentUrl;
 /**
  * POST /callback JSON body.
  * `content` optional when attachments length ≥ 1.
- * Auth: prefer Bearer / x-callback-token; ?token= still accepted (warned).
+ * Auth: Authorization Bearer or x-callback-token header only (?token= removed in 0.2.4).
  */
 export interface CallbackPayload {
   channelId?: string;

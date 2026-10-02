@@ -104,11 +104,12 @@ Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** afte
 
 ## Callback contract (outbound)
 
-Auth (prefer headers; `?token=` still accepted):
+Auth (**header-only** as of **0.2.4** — query `?token=` removed):
 
-- **Preferred:** `Authorization: Bearer <CALLBACK_TOKEN>`, or
-- **Preferred:** header `x-callback-token: <CALLBACK_TOKEN>`
-- **Deprecated (still works):** query `?token=<CALLBACK_TOKEN>` — bridge logs a one-time / throttled warning recommending headers
+- `Authorization: Bearer <CALLBACK_TOKEN>`, or
+- header `x-callback-token: <CALLBACK_TOKEN>`
+- Missing or wrong token → **401** `unauthorized`
+- Query `?token=` alone is **rejected** (use a header)
 
 ### Soft rate limit
 

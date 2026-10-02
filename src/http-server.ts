@@ -45,8 +45,8 @@ function chunkText(text: string, max = DISCORD_MAX): string[] {
   return parts;
 }
 
-/** How the callback token was supplied. Prefer bearer / x-callback-token over ?token=. */
-export type CallbackAuthSource = "bearer" | "header" | "query";
+/** How the callback token was supplied (header-only as of 0.2.4). */
+export type CallbackAuthSource = "bearer" | "header";
 
 export interface CallbackAuth {
   token?: string;
@@ -54,8 +54,9 @@ export interface CallbackAuth {
 }
 
 /**
- * Extract callback token. Header auth wins over query.
- * Prefer Authorization: Bearer or x-callback-token; ?token= still accepted.
+ * Extract callback token from headers only.
+ * Accepts Authorization: Bearer or x-callback-token.
+ * Query ?token= is rejected (removed in 0.2.4).
  */
 export function extractCallbackAuth(req: Request): CallbackAuth {
   const auth = req.header("authorization");
@@ -65,35 +66,7 @@ export function extractCallbackAuth(req: Request): CallbackAuth {
   }
   const h = req.header("x-callback-token")?.trim();
   if (h) return { token: h, source: "header" };
-  const q = typeof req.query.token === "string" ? req.query.token.trim() : "";
-  if (q) return { token: q, source: "query" };
   return {};
-}
-
-/** @deprecated use extractCallbackAuth */
-function extractToken(req: Request): string | undefined {
-  return extractCallbackAuth(req).token;
-}
-
-/** Once-per-identity, then at most every 15m — recommend headers when ?token= used. */
-const queryTokenWarnAt = new Map<string, number>();
-const QUERY_TOKEN_WARN_COOLDOWN_MS = 15 * 60 * 1000;
-
-export function warnQueryTokenAuth(tokenHash: string, now = Date.now()): boolean {
-  const prev = queryTokenWarnAt.get(tokenHash);
-  if (prev !== undefined && now - prev < QUERY_TOKEN_WARN_COOLDOWN_MS) {
-    return false;
-  }
-  queryTokenWarnAt.set(tokenHash, now);
-  console.warn(
-    `[callback] auth via ?token= query (id=${tokenHash}); prefer Authorization: Bearer or x-callback-token`,
-  );
-  return true;
-}
-
-/** Test helper */
-export function clearQueryTokenWarnState(): void {
-  queryTokenWarnAt.clear();
 }
 
 function clientIp(req: Request): string {
@@ -245,7 +218,7 @@ export function createHttpServer(
         return;
       }
       const tAuth = monoMs();
-      const { token, source } = extractCallbackAuth(req);
+      const { token } = extractCallbackAuth(req);
       if (!token || token !== cfg.callbackToken) {
         logTiming({
           stage: "callback_auth",
@@ -256,9 +229,6 @@ export function createHttpServer(
         return;
       }
       const tokenHash = hashIdentity(token);
-      if (source === "query") {
-        warnQueryTokenAuth(tokenHash);
-      }
 
       // Soft rate limit after successful auth (keyed by token identity + client IP).
       if (rateLimiter.enabled) {
