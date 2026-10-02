@@ -219,7 +219,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
             prompt,
             metadata,
           },
-          cfg.gatewayToken || undefined,
+          cfg.gatewayToken,
         );
         accepted = Boolean(result.accepted);
         logTiming({

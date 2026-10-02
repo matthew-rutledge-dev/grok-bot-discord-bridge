@@ -75,7 +75,7 @@ See [`.env.example`](./.env.example). Notable names:
 - `DISCORD_BOT_TOKEN` — required for Gateway login
 - `DISCORD_GUILD_ID`, `DISCORD_ALLOWFROM`, `DISCORD_ALLOW_ROLES`, `DISCORD_ALLOW_CHANNELS`, `DISCORD_OWNER_ID`, `DISCORD_DM_POLICY`
 - `GROK_BOT_SENDPROMPT_URL` — default `http://host.docker.internal:1340/api/sendPrompt` on Docker hosts that support it (or use LAN IP of the Grok Bot computer)
-- `GROK_BOT_GATEWAY_TOKEN` — optional Bearer for sendPrompt
+- `GROK_BOT_GATEWAY_TOKEN` — **required** Bearer for outbound sendPrompt (fail-closed: blank/unset refuses wakes; no unauthenticated POST)
 - `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN` (store the token in your host vault or secrets manager — never in git)
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
 
