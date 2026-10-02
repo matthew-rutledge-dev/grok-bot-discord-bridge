@@ -23,9 +23,14 @@ describe("attachments allowlist", () => {
     assert.ok(ALLOWED_MIME.has("application/json"));
     assert.ok(ALLOWED_MIME.has("text/markdown"));
     assert.ok(ALLOWED_MIME.has("text/csv"));
-    assert.equal(ALLOWED_MIME.has("application/zip"), false);
+    assert.ok(ALLOWED_MIME.has("application/zip"));
+    assert.ok(ALLOWED_MIME.has("application/x-tar"));
+    assert.ok(ALLOWED_MIME.has("application/gzip"));
+    assert.ok(ALLOWED_MIME.has("application/x-7z-compressed"));
+    assert.ok(ALLOWED_MIME.has("application/vnd.rar"));
     assert.equal(ALLOWED_MIME.has("application/x-msdownload"), false);
     assert.equal(ALLOWED_MIME.has("application/x-iso9660-image"), false);
+    assert.equal(ALLOWED_MIME.has("application/vnd.microsoft.portable-executable"), false);
   });
 
   it("guesses office/code mime from filename when octet-stream", () => {
@@ -45,6 +50,18 @@ describe("attachments allowlist", () => {
       docx.contentType,
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     );
+    const zip = decodeBase64Attachment({
+      filename: "bundle.zip",
+      contentType: "application/octet-stream",
+      data,
+    });
+    assert.equal(zip.contentType, "application/zip");
+    const tgz = decodeBase64Attachment({
+      filename: "src.tar.gz",
+      contentType: "application/octet-stream",
+      data,
+    });
+    assert.equal(tgz.contentType, "application/gzip");
   });
 });
 
@@ -66,8 +83,8 @@ describe("decodeBase64Attachment", () => {
     assert.throws(
       () =>
         decodeBase64Attachment({
-          filename: "x.bin",
-          contentType: "application/zip",
+          filename: "x.exe",
+          contentType: "application/x-msdownload",
           data,
         }),
       (e: unknown) =>

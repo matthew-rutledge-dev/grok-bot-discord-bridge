@@ -48,6 +48,16 @@ export const ALLOWED_MIME = new Set([
   "application/x-sh",
   "application/x-powershell",
   "text/x-powershell",
+  // archives (normal); still deny exe/msi/dmg/iso/appimage
+  "application/zip",
+  "application/x-tar",
+  "application/tar",
+  "application/gzip",
+  "application/x-gzip",
+  "application/x-gtar",
+  "application/x-7z-compressed",
+  "application/vnd.rar",
+  "application/x-rar-compressed",
 ]);
 
 export type AttachmentErrorCode =
@@ -135,10 +145,18 @@ const EXT_MIME: Record<string, string> = {
   ".ods": "application/vnd.oasis.opendocument.spreadsheet",
   ".odp": "application/vnd.oasis.opendocument.presentation",
   ".rtf": "application/rtf",
+  ".zip": "application/zip",
+  ".tar": "application/x-tar",
+  ".gz": "application/gzip",
+  ".tgz": "application/x-gtar",
+  ".7z": "application/x-7z-compressed",
+  ".rar": "application/vnd.rar",
 };
 
 function guessMimeFromFilename(filename: string): string | undefined {
   const lower = filename.toLowerCase();
+  // Compound extensions first (e.g. archive.tar.gz).
+  if (lower.endsWith(".tar.gz")) return "application/gzip";
   const dot = lower.lastIndexOf(".");
   if (dot < 0) return undefined;
   return EXT_MIME[lower.slice(dot)];
