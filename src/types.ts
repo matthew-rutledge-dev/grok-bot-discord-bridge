@@ -3,7 +3,7 @@ export interface ChannelMapRow {
   channelId: string;
   /** Stable short name for wake header `d:<slug>:<messageId>` (e.g. ai-gen-chat). */
   slug: string;
-  /** Agent alias for optional thin JSON `map` field (e.g. Rimuru_orch). */
+  /** Agent alias for optional thin JSON `map` field (e.g. chat-agent). */
   alias?: string;
   label?: string;
   agentId: string;

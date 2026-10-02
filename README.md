@@ -2,9 +2,7 @@
 
 Thin **Discord Gateway → Grok Bot `sendPrompt` → Discord callback** bridge.
 
-Portfolio repo for Matthew Rutledge. Live host **servergen1** (`192.168.86.236`) under `/opt/sites/grok-bot-discord-bridge`.
-
-OpenClaw Discord remains untouched (already disabled). Bot identity: **Bender**.
+Self-hosted wake path for Discord → your Grok Bot agents. Configure **your own** Discord bot, guild allowlists, and deploy path. This repo ships example configs with placeholders only — never commit real tokens or live snowflakes.
 
 ## Architecture
 
@@ -59,14 +57,16 @@ Evaluation order for **guild** messages:
 
 Owner id seeds pairing approvals. No agent is invoked until an allow path succeeds.
 
-### Seed (OpenClaw shape — config only)
+### Example config (placeholders only)
 
-| Field | Value |
+Copy `config/security.json` and `config/channel-map.json`, then replace every placeholder snowflake and agent id with **your** values before go-live. Shipped examples use fake IDs so the repo stays installer-neutral.
+
+| Field | Example placeholder |
 |-------|--------|
-| Guild | `949100784186966066` (KittenClubbers) |
-| Users | `339560375924031498`, `354095575282614272` |
-| Owner | `339560375924031498` |
-| `requireMention` | `false` for that guild |
+| Guild | `111111111111111111` (`example-guild` label) |
+| Users | `222222222222222222`, `333333333333333333` |
+| Owner | `222222222222222222` |
+| `requireMention` | set per guild in `security.json` (example uses `false`) |
 
 ## Env
 
@@ -76,7 +76,7 @@ See [`.env.example`](./.env.example). Notable names:
 - `DISCORD_GUILD_ID`, `DISCORD_ALLOWFROM`, `DISCORD_ALLOW_ROLES`, `DISCORD_ALLOW_CHANNELS`, `DISCORD_OWNER_ID`, `DISCORD_DM_POLICY`
 - `GROK_BOT_SENDPROMPT_URL` — default `http://host.docker.internal:1340/api/sendPrompt` on Docker hosts that support it (or use LAN IP of the Grok Bot computer)
 - `GROK_BOT_GATEWAY_TOKEN` — optional Bearer for sendPrompt
-- `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN` (vault **`DISCORD_BRIDGE.callback_token`**)
+- `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN` (store the token in your host vault or secrets manager — never in git)
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
 
 **Git never gets real secrets** — only `.env.example`. Host `.env` is local.
@@ -187,7 +187,7 @@ Text only (legacy):
 curl -sS -X POST "http://127.0.0.1:18083/callback" \
   -H "Authorization: Bearer $CALLBACK_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"channelId":"1509247663646965770","content":"hello from bridge"}'
+  -d '{"channelId":"555555555555555555","content":"hello from bridge"}'
 ```
 
 JSON + tiny PNG (1×1):
@@ -197,7 +197,7 @@ B64=iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM
 curl -sS -X POST "http://127.0.0.1:18083/callback" \
   -H "Authorization: Bearer $CALLBACK_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"channelId\":\"1509247663646965770\",\"content\":\"png smoke\",\"attachments\":[{\"filename\":\"1x1.png\",\"contentType\":\"image/png\",\"data\":\"$B64\"}]}"
+  -d "{\"channelId\":\"555555555555555555\",\"content\":\"png smoke\",\"attachments\":[{\"filename\":\"1x1.png\",\"contentType\":\"image/png\",\"data\":\"$B64\"}]}"
 ```
 
 Multipart:
@@ -205,7 +205,7 @@ Multipart:
 ```bash
 curl -sS -X POST "http://127.0.0.1:18083/callback" \
   -H "Authorization: Bearer $CALLBACK_TOKEN" \
-  -F "channelId=1509247663646965770" \
+  -F "channelId=555555555555555555" \
   -F "content=multipart smoke" \
   -F "files=@./shot.png;type=image/png"
 ```
@@ -220,7 +220,7 @@ curl -sS -X POST "http://127.0.0.1:18083/callback" \
 ## Docker Compose
 
 ```bash
-cd /opt/sites/grok-bot-discord-bridge
+cd /path/to/grok-bot-discord-bridge
 # Preserve live .env + config/security.json + config/channel-map.json
 docker compose up -d --build
 curl -sS http://127.0.0.1:18083/healthz   # discordReady: true
@@ -238,7 +238,7 @@ HTTP_ONLY=1 HTTP_BIND=127.0.0.1 npm start   # HTTP only, no Discord
 
 ## License
 
-Private portfolio use; no warranty.
+MIT — Copyright (c) 2026 Matthew Rutledge. See [LICENSE](./LICENSE).
 
 ## Timing logs
 

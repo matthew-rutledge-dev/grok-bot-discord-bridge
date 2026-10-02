@@ -23,7 +23,7 @@ async function main(): Promise<void> {
       "[boot] DISCORD_BOT_TOKEN missing or placeholder — refusing Discord Gateway login.",
     );
     console.error(
-      "[boot] HTTP /healthz is up. Fill .env from vault DISCORD_FLEET_WAKE, then restart.",
+      "[boot] HTTP /healthz is up. Set DISCORD_BOT_TOKEN in .env (see .env.example), then restart.",
     );
     console.error(
       "[boot] Exiting cleanly so compose does not pretend to be live. Leave stack stopped until token is set.",

@@ -2,7 +2,7 @@
 # Public Discord Gateway outbound; callback binds 127.0.0.1:18083.
 #
 # Do NOT start live until .env has a real DISCORD_BOT_TOKEN.
-# Prefer: fill .env from vault DISCORD / DISCORD_BRIDGE, then:
+# Prefer: copy .env.example → .env, fill secrets from your vault, then:
 #   docker compose up -d --build
 #
 # Without a real token the process exits cleanly (code 2). Keep the stack
