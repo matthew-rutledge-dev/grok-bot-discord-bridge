@@ -37,6 +37,8 @@ export interface AppConfig {
   sendPromptUrl: string;
   gatewayToken: string;
   callbackToken: string;
+  /** Soft POST /callback limit per minute (0 = disabled). Default 90. */
+  callbackRateLimitPerMin: number;
   callbackPath: string;
   callbackBaseUrl: string;
   httpBind: string;
@@ -81,6 +83,12 @@ export function loadConfig(): AppConfig {
     ),
     gatewayToken: env("GROK_BOT_GATEWAY_TOKEN"),
     callbackToken: env("CALLBACK_TOKEN"),
+    callbackRateLimitPerMin: (() => {
+      const raw = env("CALLBACK_RATE_LIMIT_PER_MIN", "90");
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return 90;
+      return Math.floor(n);
+    })(),
     callbackPath: env("CALLBACK_PATH", "/callback"),
     callbackBaseUrl: env("CALLBACK_BASE_URL", "http://127.0.0.1:18083"),
     httpBind: env("HTTP_BIND", "127.0.0.1"),

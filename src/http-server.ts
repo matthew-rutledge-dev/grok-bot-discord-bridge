@@ -21,6 +21,10 @@ import {
   monoMs,
   takeIdleGapMs,
 } from "./timing.js";
+import {
+  SlidingWindowRateLimiter,
+  hashIdentity,
+} from "./rate-limit.js";
 
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
@@ -41,15 +45,64 @@ function chunkText(text: string, max = DISCORD_MAX): string[] {
   return parts;
 }
 
-function extractToken(req: Request): string | undefined {
+/** How the callback token was supplied. Prefer bearer / x-callback-token over ?token=. */
+export type CallbackAuthSource = "bearer" | "header" | "query";
+
+export interface CallbackAuth {
+  token?: string;
+  source?: CallbackAuthSource;
+}
+
+/**
+ * Extract callback token. Header auth wins over query.
+ * Prefer Authorization: Bearer or x-callback-token; ?token= still accepted.
+ */
+export function extractCallbackAuth(req: Request): CallbackAuth {
   const auth = req.header("authorization");
   if (auth?.toLowerCase().startsWith("bearer ")) {
-    return auth.slice(7).trim();
+    const token = auth.slice(7).trim();
+    if (token) return { token, source: "bearer" };
   }
-  const h = req.header("x-callback-token");
-  if (h) return h.trim();
-  const q = typeof req.query.token === "string" ? req.query.token : undefined;
-  return q?.trim();
+  const h = req.header("x-callback-token")?.trim();
+  if (h) return { token: h, source: "header" };
+  const q = typeof req.query.token === "string" ? req.query.token.trim() : "";
+  if (q) return { token: q, source: "query" };
+  return {};
+}
+
+/** @deprecated use extractCallbackAuth */
+function extractToken(req: Request): string | undefined {
+  return extractCallbackAuth(req).token;
+}
+
+/** Once-per-identity, then at most every 15m — recommend headers when ?token= used. */
+const queryTokenWarnAt = new Map<string, number>();
+const QUERY_TOKEN_WARN_COOLDOWN_MS = 15 * 60 * 1000;
+
+export function warnQueryTokenAuth(tokenHash: string, now = Date.now()): boolean {
+  const prev = queryTokenWarnAt.get(tokenHash);
+  if (prev !== undefined && now - prev < QUERY_TOKEN_WARN_COOLDOWN_MS) {
+    return false;
+  }
+  queryTokenWarnAt.set(tokenHash, now);
+  console.warn(
+    `[callback] auth via ?token= query (id=${tokenHash}); prefer Authorization: Bearer or x-callback-token`,
+  );
+  return true;
+}
+
+/** Test helper */
+export function clearQueryTokenWarnState(): void {
+  queryTokenWarnAt.clear();
+}
+
+function clientIp(req: Request): string {
+  const xf = req.header("x-forwarded-for");
+  if (xf) {
+    const first = xf.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  return req.socket.remoteAddress || req.ip || "unknown";
 }
 
 function attachmentHttpStatus(code: string): number {
@@ -149,10 +202,22 @@ async function deliverToChannel(args: {
 export function createHttpServer(
   cfg: AppConfig,
   getDiscord: () => Client | null,
+  opts?: { rateLimiter?: SlidingWindowRateLimiter },
 ): Express {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: JSON_BODY_LIMIT }));
+
+  const rateLimiter =
+    opts?.rateLimiter ??
+    new SlidingWindowRateLimiter(cfg.callbackRateLimitPerMin);
+  if (rateLimiter.enabled) {
+    console.log(
+      `[http] callback soft rate limit ${rateLimiter.limit}/min (token hash + IP)`,
+    );
+  } else {
+    console.log("[http] callback soft rate limit disabled");
+  }
 
   app.get("/healthz", (_req, res) => {
     const discord = getDiscord();
@@ -180,7 +245,7 @@ export function createHttpServer(
         return;
       }
       const tAuth = monoMs();
-      const token = extractToken(req);
+      const { token, source } = extractCallbackAuth(req);
       if (!token || token !== cfg.callbackToken) {
         logTiming({
           stage: "callback_auth",
@@ -190,6 +255,42 @@ export function createHttpServer(
         res.status(401).json({ error: "unauthorized" });
         return;
       }
+      const tokenHash = hashIdentity(token);
+      if (source === "query") {
+        warnQueryTokenAuth(tokenHash);
+      }
+
+      // Soft rate limit after successful auth (keyed by token identity + client IP).
+      if (rateLimiter.enabled) {
+        const ip = clientIp(req);
+        const tokenKey = `t:${tokenHash}`;
+        const ipKey = `ip:${ip}`;
+        const tokenPeek = rateLimiter.check(tokenKey, Date.now(), {
+          record: false,
+        });
+        const ipPeek = rateLimiter.check(ipKey, Date.now(), { record: false });
+        if (!tokenPeek.allowed || !ipPeek.allowed) {
+          const denied = !tokenPeek.allowed ? tokenPeek : ipPeek;
+          const which = !tokenPeek.allowed ? "token" : "ip";
+          console.warn(
+            `[callback] rate_limited which=${which} id=${tokenHash} ip=${ip} limit=${rateLimiter.limit}/min retry_after=${denied.retryAfterSec}`,
+          );
+          logTiming({
+            stage: "callback_rate_limit",
+            ms: elapsedMs(tAuth),
+            ok: false,
+          });
+          res.setHeader("Retry-After", String(denied.retryAfterSec));
+          res.status(429).json({
+            error: "rate_limited",
+            retryAfterSec: denied.retryAfterSec,
+          });
+          return;
+        }
+        rateLimiter.check(tokenKey);
+        rateLimiter.check(ipKey);
+      }
+
       const authMs = elapsedMs(tAuth);
       // replyToMessageId known after body parse — re-emit auth with msg= below.
 

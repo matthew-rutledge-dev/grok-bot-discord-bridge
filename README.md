@@ -77,6 +77,7 @@ See [`.env.example`](./.env.example). Notable names:
 - `GROK_BOT_SENDPROMPT_URL` — default `http://host.docker.internal:1340/api/sendPrompt` on Docker hosts that support it (or use LAN IP of the Grok Bot computer)
 - `GROK_BOT_GATEWAY_TOKEN` — **required** Bearer for outbound sendPrompt (fail-closed: blank/unset refuses wakes; no unauthenticated POST)
 - `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN` (store the token in your host vault or secrets manager — never in git)
+- `CALLBACK_RATE_LIMIT_PER_MIN` — soft callback limit (default `90`; `0` = off)
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
 
 **Git never gets real secrets** — only `.env.example`. Host `.env` is local.
@@ -103,10 +104,15 @@ Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** afte
 
 ## Callback contract (outbound)
 
-Auth (unchanged):
+Auth (prefer headers; `?token=` still accepted):
 
-- `Authorization: Bearer <CALLBACK_TOKEN>`, or
-- header `x-callback-token: <CALLBACK_TOKEN>`
+- **Preferred:** `Authorization: Bearer <CALLBACK_TOKEN>`, or
+- **Preferred:** header `x-callback-token: <CALLBACK_TOKEN>`
+- **Deprecated (still works):** query `?token=<CALLBACK_TOKEN>` — bridge logs a one-time / throttled warning recommending headers
+
+### Soft rate limit
+
+`POST /callback` is soft-limited in-memory at **90 requests/minute** by default (override with `CALLBACK_RATE_LIMIT_PER_MIN`; `0` disables). Keys: hash of the callback token **and** client IP (either bucket tripping returns **429** + `Retry-After`). Ceiling is high so normal dual-deliver never trips; only abuse is logged and rejected. Does not crash the process.
 
 ### JSON (`Content-Type: application/json`)
 
