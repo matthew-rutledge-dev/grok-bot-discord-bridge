@@ -179,6 +179,34 @@ async function deliverToChannel(args: {
   return { messageId: firstId, chunks: chunks.length };
 }
 
+
+async function postPlannerThread(args: {
+  channel: TextBasedChannel;
+  messageId: string;
+  text: string;
+}): Promise<boolean> {
+  const text = args.text.trim().slice(0, 6000);
+  if (!text) return false;
+  const messages = (
+    args.channel as unknown as {
+      messages?: { fetch: (id: string) => Promise<Record<string, unknown>> };
+    }
+  ).messages;
+  if (!messages) return false;
+  const existing = await messages.fetch(args.messageId);
+  const startThread = existing.startThread;
+  if (typeof startThread !== "function") return false;
+  const thread = await (startThread as (opts: unknown) => Promise<{ send: (payload: unknown) => Promise<unknown> }>).call(existing, {
+    name: "Planner log",
+    autoArchiveDuration: 60,
+  });
+  const chunks = chunkText(text);
+  for (const chunk of chunks) {
+    await thread.send({ content: chunk });
+  }
+  return true;
+}
+
 async function editStatusMessage(args: {
   channel: TextBasedChannel;
   statusMessageId: string;
@@ -306,6 +334,7 @@ export function createHttpServer(
       let content: string | undefined;
       let replyToMessageId: string | undefined;
       let statusMessageId: string | undefined;
+      let threadContent: string | undefined;
       let files: ResolvedAttachment[] = [];
 
       const tResolve = monoMs();
@@ -321,6 +350,10 @@ export function createHttpServer(
               ? body.replyToMessageId
               : undefined;
           statusMessageId = cleanId(body.statusMessageId);
+          threadContent =
+            typeof body.threadContent === "string"
+              ? body.threadContent.slice(0, 6000)
+              : undefined;
           type Uploaded = {
             fieldname: string;
             originalname: string;
@@ -336,6 +369,10 @@ export function createHttpServer(
           content = typeof body?.content === "string" ? body.content : undefined;
           replyToMessageId = body?.replyToMessageId;
           statusMessageId = cleanId(body?.statusMessageId);
+          threadContent =
+            typeof body?.threadContent === "string"
+              ? body.threadContent.slice(0, 6000)
+              : undefined;
           files = await resolveJsonAttachments(body?.attachments);
         }
       } catch (err) {
@@ -448,6 +485,19 @@ export function createHttpServer(
               files,
             });
             forgetPlannerStatus(replyToMessageId, editId);
+            let threadStarted = false;
+            if (threadContent && threadContent.trim()) {
+              try {
+                threadStarted = await postPlannerThread({
+                  channel: channel as TextBasedChannel,
+                  messageId: edited.messageId,
+                  text: threadContent,
+                });
+              } catch (threadErr) {
+                const threadMsg = threadErr instanceof Error ? threadErr.message : String(threadErr);
+                console.error(`[callback] planner thread failed id=${edited.messageId} err=${threadMsg}`);
+              }
+            }
             logTiming({
               msg: replyToMessageId,
               stage: "callback_deliver",
@@ -469,6 +519,7 @@ export function createHttpServer(
               edited: true,
               chunks: 1,
               attachments: files.length,
+              thread: threadStarted,
             });
             return;
           } catch (editErr) {
