@@ -102,7 +102,7 @@ d:<slug>:<messageId>
 
 Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** after the wake. Do not store these URLs long-term expecting them to stay valid.
 
-## Local planner hop (optional, 0.2.6)
+## Local planner hop (optional, 0.2.7)
 
 Default is unchanged: a channel-map row without the opt-in fields still calls Grok Bot `sendPrompt`.
 
@@ -112,7 +112,7 @@ A row opts into the local planner only when all three are set:
 - `wake_agent`: `false`
 - `local_handler`: `"rumble-pixel-planner"`
 
-Those rows do **not** call `sendPrompt`. The bridge POSTs this JSON to `LOCAL_PLANNER_URL` with `Authorization: Bearer <LOCAL_PLANNER_TOKEN>` (planner auth only; this is not the callback token):
+Those rows do **not** call `sendPrompt`. The bridge posts a short message in the same channel, `Working on it.`, then POSTs this JSON to `LOCAL_PLANNER_URL` with `Authorization: Bearer <LOCAL_PLANNER_TOKEN>` (planner auth only; this is not the callback token):
 
 ```json
 {
@@ -121,12 +121,17 @@ Those rows do **not** call `sendPrompt`. The bridge POSTs this JSON to `LOCAL_PL
   "channelId": "<discord channel id>",
   "slug": "<channel slug>",
   "messageId": "<inbound Discord message id>",
+  "statusMessageId": "<Working on it. message id>",
   "callbackUrl": "<CALLBACK_BASE_URL + CALLBACK_PATH>",
   "dryRun": false
 }
 ```
 
-`messageId` is the inbound Discord message id for that hop. Do not send a placeholder. The same `messageId` and `callbackUrl` are also set on the planner request query string, replacing any `messageId` already on `LOCAL_PLANNER_URL`. The callback token is **not** placed on that query string.
+`messageId` is the inbound Discord message id for that hop. Do not send a placeholder. `statusMessageId` is the working message the bridge just posted, when that post succeeded. The same `messageId`, `callbackUrl`, and `statusMessageId` (when present) are set on the planner request query string, replacing any `messageId` already on `LOCAL_PLANNER_URL`. The callback token is **not** placed on that query string.
+
+The bridge does **not** wait for generation to finish, and it does **not** abort the planner HTTP call. Aborting that call can stop a handler that is still tied to the connection. The timeout is not raised. A dropped connection, a timeout, or `fetch failed` after the hop was sent is not a final failure and does not add a red X. The accept check is unchanged: it is added only when that HTTP call returns ok. The working message is what the channel shows while the hop runs. There is no spinner reaction.
+
+If the planner URL or token is blank, or the planner endpoint rejects the hop before work starts (HTTP 401, 403, or 404), the bridge edits the working message to `Couldn't start that.` That row still does not `sendPrompt`.
 
 ### How the hop posts output
 
@@ -137,9 +142,9 @@ Auth on that POST is header-only:
 - `Authorization: Bearer <CALLBACK_TOKEN>`, or
 - header `x-callback-token: <CALLBACK_TOKEN>`
 
-Do not put the callback token in a query string (`?token=` is rejected). Set `replyToMessageId` to the `messageId` from the hop so the reply threads to the inbound message, and set `channelId` to the channel from the hop. A handler that is not given the real message id and callback URL can exit successfully and never post.
+Do not put the callback token in a query string (`?token=` is rejected). Set `channelId` to the channel from the hop. Set `replyToMessageId` to the inbound `messageId`. Set `statusMessageId` to the working-message id from the hop when you have it. The bridge edits that working message (image on success, or the callback text on failure) instead of posting a second message. If `statusMessageId` is omitted, the bridge still edits the working message it stored for that `replyToMessageId`. If neither is available, it sends a new message as before. A handler that is not given the real message id and callback URL can exit successfully and never post.
 
-Leave `agentId` as the real id (do not invent one). If the planner URL or planner token is blank, that row fails closed and still does not `sendPrompt`.
+Leave `agentId` as the real id (do not invent one).
 
 ## Callback contract (outbound)
 
@@ -167,6 +172,7 @@ Content-Type: application/json
   "channelId": "<discord channel snowflake>",
   "content": "optional markdown-ish text",
   "replyToMessageId": "<optional>",
+  "statusMessageId": "<optional, edit this message instead of sending>",
   "userId": "<optional>",
   "agentId": "<optional>",
   "attachments": [
@@ -192,6 +198,7 @@ Attachment item (exactly one of `data` or `url`):
 | `channelId` | required |
 | `content` | optional text |
 | `replyToMessageId` | optional |
+| `statusMessageId` | optional; edit this message instead of sending a new one |
 | `files` or `files[]` | file parts (max 10) |
 
 Prefer multipart for large binaries. JSON body limit is **12mb** (base64 overhead); multipart uses multer memory limits.
@@ -209,7 +216,7 @@ Else **415** `unsupported_media_type`.
 
 ### Delivery
 
-Uses discord.js `channel.send({ content?, files: AttachmentBuilder[], reply? })`. Attachments go on the **first** chunk/message; long text is still chunked (~1900 chars).
+Uses discord.js `channel.send({ content?, files: AttachmentBuilder[], reply? })`, unless `statusMessageId` is set or this bridge stored a working message for `replyToMessageId`. In that case it edits that message (content and files) instead of sending a second one. If the edit fails, it falls back to `channel.send`. Attachments go on the **first** chunk/message; long text is still chunked (~1900 chars).
 
 Success: `{ "ok": true, "messageId": "...", "chunks": N, "attachments": N }`.
 

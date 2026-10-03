@@ -7,6 +7,7 @@ import {
 } from "discord.js";
 import type { AppConfig } from "./config.js";
 import type { CallbackPayload } from "./types.js";
+import { forgetPlannerStatus, lookupPlannerStatus } from "./local-planner.js";
 import {
   AttachmentError,
   MAX_ATTACHMENT_BYTES,
@@ -29,6 +30,12 @@ import {
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
 const JSON_BODY_LIMIT = "12mb";
+
+function cleanId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
 
 function chunkText(text: string, max = DISCORD_MAX): string[] {
   if (!text) return [];
@@ -172,6 +179,33 @@ async function deliverToChannel(args: {
   return { messageId: firstId, chunks: chunks.length };
 }
 
+async function editStatusMessage(args: {
+  channel: TextBasedChannel;
+  statusMessageId: string;
+  content: string;
+  files: ResolvedAttachment[];
+}): Promise<{ messageId: string }> {
+  const messages = (
+    args.channel as unknown as {
+      messages?: {
+        fetch: (id: string) => Promise<{
+          id: string;
+          edit: (payload: unknown) => Promise<{ id: string }>;
+        }>;
+      };
+    }
+  ).messages;
+  if (!messages) throw new Error("status_message_unavailable");
+  const existing = await messages.fetch(args.statusMessageId);
+  const builders = args.files.map(
+    (f) => new AttachmentBuilder(f.buffer, { name: f.filename }),
+  );
+  const payload: Record<string, unknown> = { content: args.content };
+  if (builders.length) payload.files = builders;
+  const edited = await existing.edit(payload);
+  return { messageId: edited.id || args.statusMessageId };
+}
+
 export function createHttpServer(
   cfg: AppConfig,
   getDiscord: () => Client | null,
@@ -271,6 +305,7 @@ export function createHttpServer(
       let channelId: string | undefined;
       let content: string | undefined;
       let replyToMessageId: string | undefined;
+      let statusMessageId: string | undefined;
       let files: ResolvedAttachment[] = [];
 
       const tResolve = monoMs();
@@ -285,6 +320,7 @@ export function createHttpServer(
             typeof body.replyToMessageId === "string"
               ? body.replyToMessageId
               : undefined;
+          statusMessageId = cleanId(body.statusMessageId);
           type Uploaded = {
             fieldname: string;
             originalname: string;
@@ -299,6 +335,7 @@ export function createHttpServer(
           channelId = body?.channelId;
           content = typeof body?.content === "string" ? body.content : undefined;
           replyToMessageId = body?.replyToMessageId;
+          statusMessageId = cleanId(body?.statusMessageId);
           files = await resolveJsonAttachments(body?.attachments);
         }
       } catch (err) {
@@ -400,12 +437,54 @@ export function createHttpServer(
           res.status(404).json({ error: "channel_not_found" });
           return;
         }
+        const remembered = lookupPlannerStatus(replyToMessageId);
+        const editId = statusMessageId || remembered?.statusMessageId;
+        if (editId) {
+          try {
+            const edited = await editStatusMessage({
+              channel: channel as TextBasedChannel,
+              statusMessageId: editId,
+              content: trimmed,
+              files,
+            });
+            forgetPlannerStatus(replyToMessageId, editId);
+            logTiming({
+              msg: replyToMessageId,
+              stage: "callback_deliver",
+              ms: elapsedMs(tDeliver),
+              ok: true,
+              chunks: 1,
+              attachments: files.length,
+            });
+            logTiming({
+              msg: replyToMessageId,
+              stage: "callback_total",
+              ms: elapsedMs(tCallback),
+              idle_ms: idleMs,
+              ok: true,
+            });
+            res.status(200).json({
+              ok: true,
+              messageId: edited.messageId,
+              edited: true,
+              chunks: 1,
+              attachments: files.length,
+            });
+            return;
+          } catch (editErr) {
+            const editMsg = editErr instanceof Error ? editErr.message : String(editErr);
+            console.error(
+              `[callback] status edit failed id=${editId} err=${editMsg}; sending a new message`,
+            );
+          }
+        }
         const result = await deliverToChannel({
           channel: channel as TextBasedChannel,
           content: trimmed,
           replyToMessageId,
           files,
         });
+        if (editId) forgetPlannerStatus(replyToMessageId, editId);
         logTiming({
           msg: replyToMessageId,
           stage: "callback_deliver",
