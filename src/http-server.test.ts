@@ -199,3 +199,159 @@ describe("POST /callback auth + soft rate limit", () => {
     assert.ok(body.retryAfterSec >= 1);
   });
 });
+
+describe("POST /callback edits a planner working message", () => {
+  let server: Server;
+  let base: string;
+  const edits: { id: string; payload: { content?: string; files?: unknown[] } }[] = [];
+  const sends: unknown[] = [];
+  let failEdit = false;
+  const png =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+  before(async () => {
+    const discord = {
+      isReady: () => true,
+      channels: {
+        fetch: async (channelId: string) => ({
+          id: channelId,
+          isTextBased: () => true,
+          send: async (payload: unknown) => {
+            sends.push(payload);
+            return { id: "sent-1" };
+          },
+          messages: {
+            fetch: async (id: string) => {
+              if (failEdit) throw new Error("missing");
+              return {
+                id,
+                edit: async (payload: { content?: string; files?: unknown[] }) => {
+                  edits.push({ id, payload });
+                  return { id };
+                },
+              };
+            },
+          },
+        }),
+      },
+    };
+    const app = createHttpServer(
+      mockCfg(),
+      () => discord as unknown as import("discord.js").Client,
+      { rateLimiter: new SlidingWindowRateLimiter(0) },
+    );
+    await new Promise<void>((resolve) => {
+      server = app.listen(0, "127.0.0.1", () => resolve());
+    });
+    const addr = server.address() as AddressInfo;
+    base = `http://127.0.0.1:${addr.port}`;
+  });
+
+  after(async () => {
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+  });
+
+  async function post(body: Record<string, unknown>, headers?: Record<string, string>) {
+    return fetch(`${base}/callback`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer test-callback-token",
+        ...headers,
+      },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("edits the remembered working message for replyToMessageId", async () => {
+    edits.length = 0;
+    sends.length = 0;
+    failEdit = false;
+    const { rememberPlannerStatus, lookupPlannerStatus } = await import("./local-planner.js");
+    rememberPlannerStatus("1555776603705835603", {
+      channelId: "42",
+      statusMessageId: "9001",
+    });
+    const res = await post({
+      channelId: "42",
+      content: "",
+      replyToMessageId: "1555776603705835603",
+      attachments: [{ filename: "1x1.png", contentType: "image/png", data: png }],
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { ok: boolean; edited?: boolean; messageId: string };
+    assert.equal(body.ok, true);
+    assert.equal(body.edited, true);
+    assert.equal(body.messageId, "9001");
+    assert.equal(edits.length, 1);
+    assert.equal(edits[0].id, "9001");
+    assert.equal(edits[0].payload.content, "");
+    assert.equal(edits[0].payload.files?.length, 1);
+    assert.equal(sends.length, 0);
+    assert.equal(lookupPlannerStatus("1555776603705835603"), undefined);
+  });
+
+  it("edits statusMessageId from the callback body", async () => {
+    edits.length = 0;
+    sends.length = 0;
+    failEdit = false;
+    const res = await post({
+      channelId: "42",
+      content: "Couldn't finish that.",
+      replyToMessageId: "1555776603705835603",
+      statusMessageId: "9002",
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { edited?: boolean; messageId: string };
+    assert.equal(body.edited, true);
+    assert.equal(body.messageId, "9002");
+    assert.equal(edits[0].payload.content, "Couldn't finish that.");
+    assert.equal(sends.length, 0);
+  });
+
+  it("sends a new message when there is no working message", async () => {
+    edits.length = 0;
+    sends.length = 0;
+    failEdit = false;
+    const res = await post({
+      channelId: "42",
+      content: "plain callback",
+    });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { edited?: boolean; messageId: string };
+    assert.equal(body.edited, undefined);
+    assert.equal(body.messageId, "sent-1");
+    assert.equal(edits.length, 0);
+    assert.equal(sends.length, 1);
+  });
+
+  it("falls back to a new message when the edit fails", async () => {
+    edits.length = 0;
+    sends.length = 0;
+    failEdit = true;
+    const res = await post({
+      channelId: "42",
+      content: "image later",
+      statusMessageId: "9003",
+    });
+    failEdit = false;
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { edited?: boolean; messageId: string };
+    assert.equal(body.edited, undefined);
+    assert.equal(body.messageId, "sent-1");
+    assert.equal(sends.length, 1);
+  });
+
+  it("accepts x-callback-token when editing", async () => {
+    edits.length = 0;
+    const res = await post(
+      { channelId: "42", content: "header auth", statusMessageId: "9004" },
+      { authorization: "", "x-callback-token": "test-callback-token" },
+    );
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { edited?: boolean };
+    assert.equal(body.edited, true);
+  });
+});

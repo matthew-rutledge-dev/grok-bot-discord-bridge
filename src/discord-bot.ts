@@ -7,7 +7,16 @@ import {
 } from "discord.js";
 import type { AppConfig } from "./config.js";
 import { sendPrompt } from "./grok-client.js";
-import { invokeLocalPlanner, isLocalPlannerRow, joinCallbackUrl } from "./local-planner.js";
+import {
+  PLANNER_START_FAILED_TEXT,
+  PLANNER_WORKING_TEXT,
+  forgetPlannerStatus,
+  invokeLocalPlanner,
+  isLocalPlannerRow,
+  joinCallbackUrl,
+  plannerUserSignal,
+  rememberPlannerStatus,
+} from "./local-planner.js";
 import type { ChannelMapRow } from "./types.js";
 import {
   authorizeDm,
@@ -215,33 +224,61 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
 
       if (isLocalPlannerRow(mapRow)) {
         const tLocal = monoMs();
+        // Progress is a channel message, not a spinner. The handler returns
+        // without waiting for generation. A later callback edits this message.
+        let working: Message | undefined;
         try {
-          const local = await invokeLocalPlanner(cfg, {
-            userPrompt: cleaned || "(attachment)",
-            imagePath: attachmentRefs[0]?.url ?? "",
+          working = await message.reply(PLANNER_WORKING_TEXT);
+          rememberPlannerStatus(message.id, {
             channelId: message.channelId,
-            slug: wakeSlug,
-            messageId: message.id,
-            callbackUrl: joinCallbackUrl(cfg.callbackBaseUrl, cfg.callbackPath),
-            dryRun: false,
+            statusMessageId: working.id,
           });
+        } catch (postErr) {
+          const postMsg = postErr instanceof Error ? postErr.message : String(postErr);
+          console.warn(
+            `[local-planner] working message failed msg=${message.id} err=${postMsg}`,
+          );
+        }
+        // Do not abort: the listener may hold this HTTP call until the planner
+        // exits, and aborting it can stop that work. Do not raise the timeout.
+        // Transport failure (dropped connection, fetch failed) is not a red X.
+        void invokeLocalPlanner(cfg, {
+          userPrompt: cleaned || "(attachment)",
+          imagePath: attachmentRefs[0]?.url ?? "",
+          channelId: message.channelId,
+          slug: wakeSlug,
+          messageId: message.id,
+          callbackUrl: joinCallbackUrl(cfg.callbackBaseUrl, cfg.callbackPath),
+          statusMessageId: working?.id,
+          dryRun: false,
+        }).then(async (local) => {
+          const signal = plannerUserSignal(local);
           logTiming({
             msg: message.id,
             hop,
             stage: "localPlanner",
             ms: elapsedMs(tLocal),
-            ok: local.ok,
+            ok: signal === "accepted",
             exit: local.exitCode ?? "",
           });
-          if (!local.ok) {
-            console.warn(
-              `[local-planner] not ok msg=${message.id} status=${local.status} exit=${local.exitCode ?? ""}`,
-            );
-            await message.react("⚠️").catch(() => undefined);
+          if (signal === "accepted") {
+            await message.react("✅").catch(() => undefined);
             return;
           }
-          await message.react("✅").catch(() => undefined);
-        } catch (localErr) {
+          if (signal === "start_failed") {
+            console.warn(
+              `[local-planner] not started msg=${message.id} status=${local.status} detail=${local.detail ?? ""}`,
+            );
+            forgetPlannerStatus(message.id, working?.id);
+            if (working) {
+              await working.edit({ content: PLANNER_START_FAILED_TEXT }).catch(() => undefined);
+            }
+            return;
+          }
+          console.warn(
+            `[local-planner] ${signal} msg=${message.id} status=${local.status} detail=${local.detail ?? ""} (not a final failure)`,
+          );
+        }).catch((localErr) => {
           logTiming({
             msg: message.id,
             hop,
@@ -249,8 +286,11 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
             ms: elapsedMs(tLocal),
             ok: false,
           });
-          throw localErr;
-        }
+          const msgText = localErr instanceof Error ? localErr.message : String(localErr);
+          console.warn(
+            `[local-planner] transport msg=${message.id} err=${msgText} (not a final failure)`,
+          );
+        });
         return;
       }
 

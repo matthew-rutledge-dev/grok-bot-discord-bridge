@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  PLANNER_START_FAILED_TEXT,
+  PLANNER_WORKING_TEXT,
+  forgetPlannerStatus,
   invokeLocalPlanner,
   isLocalPlannerRow,
   joinCallbackUrl,
+  lookupPlannerStatus,
+  plannerUserSignal,
+  rememberPlannerStatus,
   withPlannerCallbackQuery,
 } from "./local-planner.js";
 import type { ChannelMapRow } from "./types.js";
@@ -110,6 +116,7 @@ describe("planner callback targeting", () => {
     assert.equal(parsed.searchParams.get("messageId"), "123456789012345678");
     assert.equal(parsed.searchParams.get("callbackUrl"), "http://127.0.0.1:18083/callback");
     assert.equal(parsed.searchParams.get("token"), null);
+    assert.equal(parsed.searchParams.get("statusMessageId"), null);
     assert.equal(parsed.searchParams.get("slug"), "local-planner");
   });
 
@@ -150,5 +157,116 @@ describe("planner callback targeting", () => {
     assert.equal(posted.callbackUrl, callbackUrl);
     assert.equal(seenAuth, "Bearer planner-token");
     assert.equal(seenBody.includes("planner-token"), false);
+  });
+});
+
+describe("planner progress is not a timeout failure", () => {
+  it("names the working message and the start-failure edit", () => {
+    assert.equal(PLANNER_WORKING_TEXT, "Working on it.");
+    assert.equal(PLANNER_START_FAILED_TEXT, "Couldn't start that.");
+    assert.equal(PLANNER_WORKING_TEXT.includes("⏳"), false);
+  });
+
+  it("treats a dropped fetch as transport, not a final failure", async () => {
+    let sawSignal = false;
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      sawSignal = Boolean(init?.signal);
+      throw new TypeError("fetch failed");
+    };
+    const result = await invokeLocalPlanner(
+      { localPlannerUrl: "http://127.0.0.1:9/plan", localPlannerToken: "planner-token" },
+      {
+        userPrompt: "hat",
+        imagePath: "",
+        channelId: "42",
+        slug: "ai-gen-images",
+        messageId: "1555776603705835603",
+        callbackUrl: "http://127.0.0.1:18083/callback",
+        statusMessageId: "9001",
+        dryRun: false,
+      },
+      fetchImpl,
+    );
+    assert.equal(sawSignal, false);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 0);
+    assert.equal(result.detail, "local_planner_transport");
+    assert.equal(plannerUserSignal(result), "transport");
+  });
+
+  it("still aborts only when asked, and that abort is transport", async () => {
+    let sawSignal = false;
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      sawSignal = Boolean(init?.signal);
+      throw new DOMException("The operation was aborted", "TimeoutError");
+    };
+    const result = await invokeLocalPlanner(
+      { localPlannerUrl: "http://127.0.0.1:9/plan", localPlannerToken: "t" },
+      {
+        userPrompt: "hat",
+        imagePath: "",
+        channelId: "42",
+        slug: "ai-gen-images",
+        messageId: "1555776603705835603",
+        callbackUrl: "http://127.0.0.1:18083/callback",
+        dryRun: false,
+      },
+      fetchImpl,
+      50,
+      { abort: true },
+    );
+    assert.equal(sawSignal, true);
+    assert.equal(plannerUserSignal(result), "transport");
+  });
+
+  it("posts statusMessageId on the query and body, never a token", async () => {
+    let seenUrl = "";
+    let seenBody = "";
+    const fetchImpl: typeof fetch = async (input, init) => {
+      seenUrl = String(input);
+      seenBody = String(init?.body ?? "");
+      return new Response(JSON.stringify({ ok: true, exitCode: 0 }), { status: 200 });
+    };
+    const result = await invokeLocalPlanner(
+      { localPlannerUrl: "http://127.0.0.1:9/plan?token=secret&messageId=bridge-spawn", localPlannerToken: "planner-token" },
+      {
+        userPrompt: "hat",
+        imagePath: "",
+        channelId: "42",
+        slug: "ai-gen-images",
+        messageId: "1555776603705835603",
+        callbackUrl: "http://127.0.0.1:18083/callback",
+        statusMessageId: "9001",
+        dryRun: false,
+      },
+      fetchImpl,
+    );
+    assert.equal(result.ok, true);
+    assert.equal(plannerUserSignal(result), "accepted");
+    const parsed = new URL(seenUrl);
+    assert.equal(parsed.searchParams.get("messageId"), "1555776603705835603");
+    assert.equal(parsed.searchParams.get("statusMessageId"), "9001");
+    assert.equal(parsed.searchParams.get("token"), null);
+    const posted = JSON.parse(seenBody) as { messageId: string; statusMessageId: string; callbackUrl: string };
+    assert.equal(posted.messageId, "1555776603705835603");
+    assert.equal(posted.statusMessageId, "9001");
+    assert.equal(posted.callbackUrl, "http://127.0.0.1:18083/callback");
+    assert.equal(seenBody.includes("planner-token"), false);
+    assert.equal(seenBody.includes("secret"), false);
+  });
+
+  it("classifies start failures separately from a finished non-ok", () => {
+    assert.equal(plannerUserSignal({ ok: false, status: 0, detail: "local_planner_not_configured" }), "start_failed");
+    assert.equal(plannerUserSignal({ ok: false, status: 0, detail: "local_planner_bad_url" }), "start_failed");
+    assert.equal(plannerUserSignal({ ok: false, status: 401, detail: "unauthorized" }), "start_failed");
+    assert.equal(plannerUserSignal({ ok: false, status: 500, detail: "exit", exitCode: 1 }), "inconclusive");
+  });
+
+  it("remembers a working message by the inbound Discord message id", () => {
+    forgetPlannerStatus("1555776603705835603", "9001");
+    rememberPlannerStatus("1555776603705835603", { channelId: "42", statusMessageId: "9001" });
+    assert.equal(lookupPlannerStatus("1555776603705835603")?.statusMessageId, "9001");
+    forgetPlannerStatus(undefined, "9001");
+    assert.equal(lookupPlannerStatus("1555776603705835603"), undefined);
   });
 });

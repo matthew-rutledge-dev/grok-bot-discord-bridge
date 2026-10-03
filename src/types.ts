@@ -92,6 +92,11 @@ export interface CallbackPayload {
   userId?: string;
   content?: string;
   replyToMessageId?: string;
+  /**
+   * Edit this message instead of sending a new one.
+   * Local-planner hops set this to the "Working on it." message id.
+   */
+  statusMessageId?: string;
   agentId?: string;
   /** Max 10; each ≤8 MiB; total ≤25 MiB. */
   attachments?: CallbackAttachment[];
