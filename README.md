@@ -102,6 +102,45 @@ d:<slug>:<messageId>
 
 Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** after the wake. Do not store these URLs long-term expecting them to stay valid.
 
+## Local planner hop (optional, 0.2.6)
+
+Default is unchanged: a channel-map row without the opt-in fields still calls Grok Bot `sendPrompt`.
+
+A row opts into the local planner only when all three are set:
+
+- `primary_llm`: `"local"`
+- `wake_agent`: `false`
+- `local_handler`: `"rumble-pixel-planner"`
+
+Those rows do **not** call `sendPrompt`. The bridge POSTs this JSON to `LOCAL_PLANNER_URL` with `Authorization: Bearer <LOCAL_PLANNER_TOKEN>` (planner auth only; this is not the callback token):
+
+```json
+{
+  "userPrompt": "<human text>",
+  "imagePath": "<attachment url or empty>",
+  "channelId": "<discord channel id>",
+  "slug": "<channel slug>",
+  "messageId": "<inbound Discord message id>",
+  "callbackUrl": "<CALLBACK_BASE_URL + CALLBACK_PATH>",
+  "dryRun": false
+}
+```
+
+`messageId` is the inbound Discord message id for that hop. Do not send a placeholder. The same `messageId` and `callbackUrl` are also set on the planner request query string, replacing any `messageId` already on `LOCAL_PLANNER_URL`. The callback token is **not** placed on that query string.
+
+### How the hop posts output
+
+The local handler must POST the result (text and/or image) to `callbackUrl`. That URL is the bridge's own callback endpoint: `CALLBACK_BASE_URL` joined with `CALLBACK_PATH` (default `/callback`). Example shape: `https://callback.example.com/callback`.
+
+Auth on that POST is header-only:
+
+- `Authorization: Bearer <CALLBACK_TOKEN>`, or
+- header `x-callback-token: <CALLBACK_TOKEN>`
+
+Do not put the callback token in a query string (`?token=` is rejected). Set `replyToMessageId` to the `messageId` from the hop so the reply threads to the inbound message, and set `channelId` to the channel from the hop. A handler that is not given the real message id and callback URL can exit successfully and never post.
+
+Leave `agentId` as the real id (do not invent one). If the planner URL or planner token is blank, that row fails closed and still does not `sendPrompt`.
+
 ## Callback contract (outbound)
 
 Auth (**header-only** as of **0.2.4** — query `?token=` removed):
