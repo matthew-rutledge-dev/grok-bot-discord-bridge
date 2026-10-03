@@ -5,7 +5,13 @@ export interface LocalPlannerRequest {
   imagePath: string;
   channelId: string;
   slug: string;
+  /** Inbound Discord message id. Never a placeholder. */
   messageId: string;
+  /**
+   * Bridge POST /callback URL (CALLBACK_BASE_URL + CALLBACK_PATH).
+   * No token. Auth stays on the callback request headers.
+   */
+  callbackUrl: string;
   dryRun: boolean;
 }
 
@@ -32,6 +38,34 @@ export function isLocalPlannerRow(
   );
 }
 
+
+/**
+ * Public callback endpoint the local handler should POST to.
+ * Joins CALLBACK_BASE_URL and CALLBACK_PATH. Does not append a token.
+ */
+export function joinCallbackUrl(base: string, path: string): string {
+  const b = base.trim().replace(/\/+$/, "");
+  const raw = path.trim() || "/callback";
+  const p = raw.startsWith("/") ? raw : `/${raw}`;
+  return `${b}${p}`;
+}
+
+/**
+ * Planner HTTP call. Puts the real Discord message id and callback URL on the
+ * query string (replacing any placeholder messageId) and never puts a token there.
+ */
+export function withPlannerCallbackQuery(
+  plannerUrl: string,
+  messageId: string,
+  callbackUrl: string,
+): string {
+  const u = new URL(plannerUrl);
+  u.searchParams.set("messageId", messageId);
+  u.searchParams.set("callbackUrl", callbackUrl);
+  u.searchParams.delete("token");
+  return u.toString();
+}
+
 export async function invokeLocalPlanner(
   cfg: { localPlannerUrl: string; localPlannerToken: string },
   body: LocalPlannerRequest,
@@ -43,7 +77,13 @@ export async function invokeLocalPlanner(
   if (!url || !token) {
     return { ok: false, status: 0, detail: "local_planner_not_configured" };
   }
-  const res = await fetchImpl(url, {
+  let requestUrl: string;
+  try {
+    requestUrl = withPlannerCallbackQuery(url, body.messageId, body.callbackUrl);
+  } catch {
+    return { ok: false, status: 0, detail: "local_planner_bad_url" };
+  }
+  const res = await fetchImpl(requestUrl, {
     method: "POST",
     headers: {
       "content-type": "application/json",

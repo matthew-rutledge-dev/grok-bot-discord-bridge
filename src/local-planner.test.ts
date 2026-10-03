@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { invokeLocalPlanner, isLocalPlannerRow } from "./local-planner.js";
+import {
+  invokeLocalPlanner,
+  isLocalPlannerRow,
+  joinCallbackUrl,
+  withPlannerCallbackQuery,
+} from "./local-planner.js";
 import type { ChannelMapRow } from "./types.js";
 
 function row(partial: Partial<ChannelMapRow>): ChannelMapRow {
@@ -66,6 +71,7 @@ describe("invokeLocalPlanner", () => {
       channelId: "1",
       slug: "ai-gen-images",
       messageId: "m",
+      callbackUrl: "http://127.0.0.1:18083/callback",
       dryRun: true,
     };
     const missing = await invokeLocalPlanner(
@@ -82,5 +88,67 @@ describe("invokeLocalPlanner", () => {
     );
     assert.equal(blankTok.detail, "local_planner_not_configured");
     assert.equal(called, false);
+  });
+});
+
+describe("planner callback targeting", () => {
+  it("joins callback base and path without a token", () => {
+    assert.equal(
+      joinCallbackUrl("http://127.0.0.1:18083/", "/callback"),
+      "http://127.0.0.1:18083/callback",
+    );
+    assert.equal(
+      joinCallbackUrl("https://callback.example.com", "callback"),
+      "https://callback.example.com/callback",
+    );
+    const url = withPlannerCallbackQuery(
+      "http://127.0.0.1:9/plan?slug=local-planner&messageId=bridge-spawn&token=secret",
+      "123456789012345678",
+      "http://127.0.0.1:18083/callback",
+    );
+    const parsed = new URL(url);
+    assert.equal(parsed.searchParams.get("messageId"), "123456789012345678");
+    assert.equal(parsed.searchParams.get("callbackUrl"), "http://127.0.0.1:18083/callback");
+    assert.equal(parsed.searchParams.get("token"), null);
+    assert.equal(parsed.searchParams.get("slug"), "local-planner");
+  });
+
+  it("posts the inbound message id and callback URL", async () => {
+    let seenUrl = "";
+    let seenBody = "";
+    let seenAuth = "";
+    const fetchImpl: typeof fetch = async (input, init) => {
+      seenUrl = String(input);
+      seenBody = String(init?.body ?? "");
+      const headers = init?.headers as Record<string, string>;
+      seenAuth = headers.authorization;
+      return new Response(JSON.stringify({ ok: true, exitCode: 0 }), { status: 200 });
+    };
+    const messageId = "1509249238419378176";
+    const callbackUrl = "http://127.0.0.1:18083/callback";
+    const result = await invokeLocalPlanner(
+      { localPlannerUrl: "http://127.0.0.1:9/plan?messageId=bridge-spawn", localPlannerToken: "planner-token" },
+      {
+        userPrompt: "edit this",
+        imagePath: "https://cdn.example/a.png",
+        channelId: "42",
+        slug: "ai-gen-images",
+        messageId,
+        callbackUrl,
+        dryRun: false,
+      },
+      fetchImpl,
+    );
+    assert.equal(result.ok, true);
+    const parsed = new URL(seenUrl);
+    assert.equal(parsed.searchParams.get("messageId"), messageId);
+    assert.equal(parsed.searchParams.get("callbackUrl"), callbackUrl);
+    assert.equal(parsed.search.includes("token="), false);
+    assert.equal(parsed.search.includes("bridge-spawn"), false);
+    const posted = JSON.parse(seenBody) as { messageId: string; callbackUrl: string };
+    assert.equal(posted.messageId, messageId);
+    assert.equal(posted.callbackUrl, callbackUrl);
+    assert.equal(seenAuth, "Bearer planner-token");
+    assert.equal(seenBody.includes("planner-token"), false);
   });
 });

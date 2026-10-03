@@ -7,7 +7,7 @@ import {
 } from "discord.js";
 import type { AppConfig } from "./config.js";
 import { sendPrompt } from "./grok-client.js";
-import { invokeLocalPlanner, isLocalPlannerRow } from "./local-planner.js";
+import { invokeLocalPlanner, isLocalPlannerRow, joinCallbackUrl } from "./local-planner.js";
 import type { ChannelMapRow } from "./types.js";
 import {
   authorizeDm,
@@ -222,6 +222,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
             channelId: message.channelId,
             slug: wakeSlug,
             messageId: message.id,
+            callbackUrl: joinCallbackUrl(cfg.callbackBaseUrl, cfg.callbackPath),
             dryRun: false,
           });
           logTiming({
