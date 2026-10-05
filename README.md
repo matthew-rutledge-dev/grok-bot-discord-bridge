@@ -102,7 +102,7 @@ d:<slug>:<messageId>
 
 Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** after the wake. Do not store these URLs long-term expecting them to stay valid.
 
-## Local planner hop (optional, 0.2.7)
+## Local planner hop (optional, 0.2.9)
 
 Default is unchanged: a channel-map row without the opt-in fields still calls Grok Bot `sendPrompt`.
 
@@ -117,7 +117,9 @@ Those rows do **not** call `sendPrompt`. The bridge posts a short message in the
 ```json
 {
   "userPrompt": "<human text>",
-  "imagePath": "<attachment url or empty>",
+  "imagePath": "<attachment[0] url or empty>",
+  "referenceImagePath": "<attachment[1] url; omitted when absent>",
+  "imagePaths": ["<attachment[0]>", "<attachment[1]>"],
   "channelId": "<discord channel id>",
   "slug": "<channel slug>",
   "messageId": "<inbound Discord message id>",
@@ -126,6 +128,8 @@ Those rows do **not** call `sendPrompt`. The bridge posts a short message in the
   "dryRun": false
 }
 ```
+
+Image-edit hops forward at most two attachments: `imagePath` / `imagePaths[0]` is the base, and `referenceImagePath` / `imagePaths[1]` is the optional reference. Later attachments are ignored. Video behavior is unchanged (shared attachment forwarding only).
 
 `messageId` is the inbound Discord message id for that hop. Do not send a placeholder. `statusMessageId` is the working message the bridge just posted, when that post succeeded. The same `messageId`, `callbackUrl`, and `statusMessageId` (when present) are set on the planner request query string, replacing any `messageId` already on `LOCAL_PLANNER_URL`. The callback token is **not** placed on that query string.
 

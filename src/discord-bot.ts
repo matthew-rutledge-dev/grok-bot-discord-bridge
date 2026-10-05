@@ -14,6 +14,7 @@ import {
   invokeLocalPlanner,
   isLocalPlannerRow,
   joinCallbackUrl,
+  plannerImageFields,
   plannerUserSignal,
   rememberPlannerStatus,
 } from "./local-planner.js";
@@ -244,7 +245,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         // Transport failure (dropped connection, fetch failed) is not a red X.
         void invokeLocalPlanner(cfg, {
           userPrompt: cleaned || "(attachment)",
-          imagePath: attachmentRefs[0]?.url ?? "",
+          ...plannerImageFields(attachmentRefs),
           channelId: message.channelId,
           slug: wakeSlug,
           messageId: message.id,

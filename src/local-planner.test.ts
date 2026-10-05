@@ -8,6 +8,7 @@ import {
   isLocalPlannerRow,
   joinCallbackUrl,
   lookupPlannerStatus,
+  plannerImageFields,
   plannerUserSignal,
   rememberPlannerStatus,
   withPlannerCallbackQuery,
@@ -61,6 +62,40 @@ describe("isLocalPlannerRow", () => {
       })),
       false,
     );
+  });
+});
+
+describe("plannerImageFields", () => {
+  it("maps a[0] to imagePath and a[1] to referenceImagePath", () => {
+    const fields = plannerImageFields([
+      { url: "https://cdn.discordapp.com/attachments/1/2/base.png" },
+      { url: "https://cdn.discordapp.com/attachments/1/3/ref.png" },
+      { url: "https://cdn.discordapp.com/attachments/1/4/ignored.png" },
+    ]);
+    assert.equal(fields.imagePath, "https://cdn.discordapp.com/attachments/1/2/base.png");
+    assert.equal(fields.referenceImagePath, "https://cdn.discordapp.com/attachments/1/3/ref.png");
+    assert.deepEqual(fields.imagePaths, [
+      "https://cdn.discordapp.com/attachments/1/2/base.png",
+      "https://cdn.discordapp.com/attachments/1/3/ref.png",
+    ]);
+  });
+
+  it("omits reference fields when only one attachment", () => {
+    const fields = plannerImageFields([
+      { url: "https://cdn.discordapp.com/attachments/1/2/base.png" },
+    ]);
+    assert.equal(fields.imagePath, "https://cdn.discordapp.com/attachments/1/2/base.png");
+    assert.equal(fields.referenceImagePath, undefined);
+    assert.deepEqual(fields.imagePaths, [
+      "https://cdn.discordapp.com/attachments/1/2/base.png",
+    ]);
+  });
+
+  it("returns empty imagePath with no attachments", () => {
+    const fields = plannerImageFields([]);
+    assert.equal(fields.imagePath, "");
+    assert.equal(fields.referenceImagePath, undefined);
+    assert.equal(fields.imagePaths, undefined);
   });
 });
 
@@ -133,11 +168,15 @@ describe("planner callback targeting", () => {
     };
     const messageId = "1509249238419378176";
     const callbackUrl = "http://127.0.0.1:18083/callback";
+    const imageFields = plannerImageFields([
+      { url: "https://cdn.example/a.png" },
+      { url: "https://cdn.example/ref.png" },
+    ]);
     const result = await invokeLocalPlanner(
       { localPlannerUrl: "http://127.0.0.1:9/plan?messageId=bridge-spawn", localPlannerToken: "planner-token" },
       {
         userPrompt: "edit this",
-        imagePath: "https://cdn.example/a.png",
+        ...imageFields,
         channelId: "42",
         slug: "ai-gen-images",
         messageId,
@@ -152,9 +191,21 @@ describe("planner callback targeting", () => {
     assert.equal(parsed.searchParams.get("callbackUrl"), callbackUrl);
     assert.equal(parsed.search.includes("token="), false);
     assert.equal(parsed.search.includes("bridge-spawn"), false);
-    const posted = JSON.parse(seenBody) as { messageId: string; callbackUrl: string };
+    const posted = JSON.parse(seenBody) as {
+      messageId: string;
+      callbackUrl: string;
+      imagePath: string;
+      referenceImagePath?: string;
+      imagePaths?: string[];
+    };
     assert.equal(posted.messageId, messageId);
     assert.equal(posted.callbackUrl, callbackUrl);
+    assert.equal(posted.imagePath, "https://cdn.example/a.png");
+    assert.equal(posted.referenceImagePath, "https://cdn.example/ref.png");
+    assert.deepEqual(posted.imagePaths, [
+      "https://cdn.example/a.png",
+      "https://cdn.example/ref.png",
+    ]);
     assert.equal(seenAuth, "Bearer planner-token");
     assert.equal(seenBody.includes("planner-token"), false);
   });

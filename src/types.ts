@@ -97,6 +97,8 @@ export interface CallbackPayload {
    * Local-planner hops set this to the "Working on it." message id.
    */
   statusMessageId?: string;
+  /** Posted into a thread on the delivered message, not on the message itself. */
+  threadContent?: string;
   agentId?: string;
   /** Max 10; each ≤8 MiB; total ≤25 MiB. */
   attachments?: CallbackAttachment[];
