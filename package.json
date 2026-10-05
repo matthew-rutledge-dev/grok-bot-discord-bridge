@@ -1,6 +1,6 @@
 {
   "name": "grok-bot-discord-bridge",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "private": true,
   "description": "Thin Discord Gateway \u2192 Grok Bot sendPrompt bridge (deny-by-default)",
   "type": "module",

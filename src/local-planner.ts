@@ -2,7 +2,17 @@ import type { ChannelMapRow } from "./types.js";
 
 export interface LocalPlannerRequest {
   userPrompt: string;
+  /** Discord attachment[0] CDN URL (base image). Empty when text-only. */
   imagePath: string;
+  /**
+   * Discord attachment[1] CDN URL (optional reference). Empty when absent.
+   * Pixel listener: referenceImagePath / reference_image_path / imagePaths[1].
+   */
+  referenceImagePath?: string;
+  /**
+   * Up to two attachment URLs: [base, optional reference]. Alternate listener path.
+   */
+  imagePaths?: string[];
   channelId: string;
   slug: string;
   /** Inbound Discord message id. Never a placeholder. */
@@ -122,6 +132,28 @@ export function isLocalPlannerRow(
     row.wake_agent === false &&
     row.local_handler === "rumble-pixel-planner"
   );
+}
+
+
+/**
+ * Map Discord wake attachment refs to Pixel local-planner body fields.
+ * a[0] = base (imagePath), a[1] = optional reference (referenceImagePath).
+ * a[2+] ignored. Matches rumble STATUS / Start-DiscordPlannerListener.ps1.
+ */
+export function plannerImageFields(
+  attachmentRefs: ReadonlyArray<{ url: string }>,
+): Pick<LocalPlannerRequest, "imagePath" | "referenceImagePath" | "imagePaths"> {
+  const urls = attachmentRefs
+    .map((r) => (typeof r.url === "string" ? r.url.trim() : ""))
+    .filter(Boolean)
+    .slice(0, 2);
+  const imagePath = urls[0] ?? "";
+  const referenceImagePath = urls[1] ?? "";
+  return {
+    imagePath,
+    ...(referenceImagePath ? { referenceImagePath } : {}),
+    ...(urls.length > 0 ? { imagePaths: urls } : {}),
+  };
 }
 
 
