@@ -6,3 +6,5 @@ dist/
 .DS_Store
 coverage/
 .npm/
+# Real agent ids. Copy config/grok-bot-roster.example.json and fill it in locally.
+config/grok-bot-roster.json

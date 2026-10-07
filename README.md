@@ -37,6 +37,17 @@ Local HTTP (loopback only via Compose publish):
 | `/healthz` | GET | Liveness + whether Discord is ready |
 | `/callback` | POST | Agent → Discord delivery (token required; text and/or media) |
 
+## Send one prompt
+
+`scripts/send-grok-bot-prompt.mjs` posts `{ agentId, prompt }` to `GROK_BOT_SENDPROMPT_URL` with `GROK_BOT_GATEWAY_TOKEN`. Run it inside the bridge container, which already has those two values.
+
+```bash
+cp config/grok-bot-roster.example.json config/grok-bot-roster.json
+node scripts/send-grok-bot-prompt.mjs example_bot "List the bots you know."
+```
+
+`config/grok-bot-roster.json` is gitignored. The example file has fake aliases only. Replace them with your own agent ids. The script refuses the placeholder ids.
+
 ## Security model (deny-by-default)
 
 Evaluation order for **guild** messages:
