@@ -19,7 +19,9 @@ Do not copy an image-planner row onto a chat channel. Do not turn a Grok Bot row
 
 Grok Build reads the channel-map row. A chat channel is `harness` `grok-build` plus a `profile` you already run. Leave other rows on their own bots. Do not invent an `agentId`. The placeholder id on a grok-build row is only there so the allow check stays non-empty. It is not sent.
 
-A Grok Bot is woken only when a channel-map row names its `agentId` and this bridge calls `sendPrompt`. A reply that started from Discord is delivered with `POST /callback`. A `sendPrompt` that did not start from a Discord message stays in the Grok Bot app. Do not invent another bot's id. To send one prompt, use [Send one prompt](#send-one-prompt) and your own roster file. Placeholder ids are refused.
+A Grok Bot is woken only when something calls `sendPrompt` with that bot's `agentId`. A Discord channel does this when its channel-map row names the bot. The HTTP response is acceptance only. A reply that started from Discord comes back on `POST /callback`. A send that did not start from Discord stays in the Grok Bot app.
+
+This public repository is the access and the explanation for sending to a Grok Bot. `scripts/send-grok-bot-prompt.mjs` resolves an alias from your local roster and posts `{ agentId, prompt }`. See [Send one prompt](#send-one-prompt). Do not invent an id. Placeholder ids are refused. No other repository is required for that send.
 
 Fleet does not assign bots and does not read chat.
 
@@ -64,7 +66,7 @@ Typing starts at once. After 15 seconds the bridge posts "Working on it." and ed
 
 ## Send one prompt
 
-`scripts/send-grok-bot-prompt.mjs` posts `{ agentId, prompt }` to `GROK_BOT_SENDPROMPT_URL` with `GROK_BOT_GATEWAY_TOKEN`. Run it inside the bridge container, which already has those two values.
+This is the public way to send a prompt to a Grok Bot. The script and this section are enough: copy the example roster, put your own agent ids in the gitignored file, and run the script inside the bridge container. The container already has `GROK_BOT_SENDPROMPT_URL` and `GROK_BOT_GATEWAY_TOKEN`. The script does not print the token or the agent id. `200` with `accepted: true` means the bot was woken. It does not contain the bot's answer.
 
 ```bash
 cp config/grok-bot-roster.example.json config/grok-bot-roster.json
