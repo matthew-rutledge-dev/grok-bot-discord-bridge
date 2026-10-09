@@ -25,6 +25,13 @@ This public repository is the access and the explanation for sending to a Grok B
 
 Fleet does not assign bots and does not read chat.
 
+Cursor uses this same pair of calls. It does not have a separate Discord or Grok Bot path.
+
+| Speak to | Call |
+|----------|------|
+| A Grok Bot | [Send one prompt](#send-one-prompt). `accepted: true` wakes the bot. The answer is not in that response. |
+| Discord | The bridge `POST /callback`, or a Fleet manage post when that MCP is connected. A file has to be bytes on that call. A path such as `images/1.jpg` inside a Grok session is not a Discord attachment until the caller adds the file. |
+
 ## Architecture
 
 ```
