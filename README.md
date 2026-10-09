@@ -4,6 +4,25 @@ Thin **Discord Gateway → Grok Bot `sendPrompt` → Discord callback** bridge.
 
 Self-hosted wake path for Discord → your Grok Bot agents. Configure **your own** Discord bot, guild allowlists, and deploy path. This repo ships example configs with placeholders only — never commit real tokens or live snowflakes.
 
+## Which piece you need
+
+| Need | Where it lives |
+|------|----------------|
+| A Discord message wakes one Grok Bot | This repo. One enabled channel-map row names that bot's `agentId`. The bridge POSTs `sendPrompt`. The answer returns later on `POST /callback`. |
+| A Discord message runs Grok Build | This repo, a grok-build row. See [Grok Build chat](#grok-build-chat). That row does not call `sendPrompt`. |
+| Inspect Discord, post, permissions, or bridge health | [grokbot-discord-fleet](https://github.com/matthew-rutledge-dev/grokbot-discord-fleet). Manage and status only. It does not receive channel messages or wake a bot. |
+| An image or video hop | This repo forwards a local-planner row (`primary_llm` `local`, `wake_agent` `false`, `local_handler` set). The planner process is not this repo. |
+
+Do not copy an image-planner row onto a chat channel. Do not turn a Grok Bot row into a local row by clearing only `wake_agent`. A missing `harness` or `profile` still calls `sendPrompt`.
+
+## If you are Grok or a Grok Bot
+
+Grok Build reads the channel-map row. A chat channel is `harness` `grok-build` plus a `profile` you already run. Leave other rows on their own bots. Do not invent an `agentId`. The placeholder id on a grok-build row is only there so the allow check stays non-empty. It is not sent.
+
+A Grok Bot is woken only when a channel-map row names its `agentId` and this bridge calls `sendPrompt`. A reply that started from Discord is delivered with `POST /callback`. A `sendPrompt` that did not start from a Discord message stays in the Grok Bot app. Do not invent another bot's id. To send one prompt, use [Send one prompt](#send-one-prompt) and your own roster file. Placeholder ids are refused.
+
+Fleet does not assign bots and does not read chat.
+
 ## Architecture
 
 ```
@@ -42,8 +61,6 @@ Local HTTP (loopback only via Compose publish):
 A channel-map row can skip `sendPrompt` and call a local chat process. Set `enabled`, `primary_llm` to `local`, `wake_agent` to `false`, `harness` to `grok-build`, and a non-empty `profile`. Do not set `local_handler` to the image-planner handler. The bridge changes the local planner URL from `/plan` to `/chat` and posts the profile plus attachment refs.
 
 Typing starts at once. After 15 seconds the bridge posts "Working on it." and edits that message with elapsed seconds. The callback replaces that message. If the callback arrives first, the hold is cancelled and the answer is a new reply. Image-planner rows still post "Working on it." immediately.
-
-[grokbot-discord-fleet](https://github.com/matthew-rutledge-dev/grokbot-discord-fleet) is manage and status only. It does not receive channel messages, wake agents, or call `sendPrompt`. This repository is the wake path.
 
 ## Send one prompt
 
