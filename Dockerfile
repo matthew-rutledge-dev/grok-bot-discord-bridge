@@ -15,6 +15,7 @@ COPY --from=build /app/package-lock.json* ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY config ./config
+COPY scripts ./scripts
 USER bridge
 EXPOSE 18083
 CMD ["node", "dist/index.js"]

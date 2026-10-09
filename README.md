@@ -66,14 +66,38 @@ Typing starts at once. After 15 seconds the bridge posts "Working on it." and ed
 
 ## Send one prompt
 
-This is the public way to send a prompt to a Grok Bot. The script and this section are enough: copy the example roster, put your own agent ids in the gitignored file, and run the script inside the bridge container. The container already has `GROK_BOT_SENDPROMPT_URL` and `GROK_BOT_GATEWAY_TOKEN`. The script does not print the token or the agent id. `200` with `accepted: true` means the bot was woken. It does not contain the bot's answer.
+The send script is in this repository: `scripts/send-grok-bot-prompt.mjs`. The image copies that `scripts/` directory to `/app/scripts`. The example roster is `config/grok-bot-roster.example.json`. Those files are the public pieces.
+
+Two files stay on your machine and are gitignored:
+
+| Local file | What it holds |
+|------------|----------------|
+| `.env` | Discord token, gateway token, callback token, send URL |
+| `config/grok-bot-roster.json` | Your aliases and agent ids |
+
+Copy `.env.example` to `.env` and the example roster to `config/grok-bot-roster.json`. Replace the placeholders. The script refuses the example ids. It does not print the token or the agent id.
+
+From a checkout on the bridge host, with those two local files in place:
 
 ```bash
-cp config/grok-bot-roster.example.json config/grok-bot-roster.json
+set -a
+. ./.env
+set +a
 node scripts/send-grok-bot-prompt.mjs example_bot "List the bots you know."
 ```
 
-`config/grok-bot-roster.json` is gitignored. The example file has fake aliases only. Replace them with your own agent ids. The script refuses the placeholder ids.
+From the running container, copy the local roster into `/tmp` for that one run. The container already has the send URL and the gateway token. A rebuild from this repo is what places `scripts/` at `/app/scripts`. The image does not contain your real roster.
+
+```bash
+docker cp config/grok-bot-roster.json grok_bot_discord_bridge:/tmp/grok-bot-roster.json
+docker exec -e GROK_BOT_ROSTER=/tmp/grok-bot-roster.json grok_bot_discord_bridge \
+  node /app/scripts/send-grok-bot-prompt.mjs example_bot "List the bots you know."
+docker exec grok_bot_discord_bridge rm -f /tmp/grok-bot-roster.json
+```
+
+Do not commit the filled-in roster.
+
+`200` with `accepted: true` means the bot was woken. The body does not contain the bot's answer.
 
 ## Security model (deny-by-default)
 
