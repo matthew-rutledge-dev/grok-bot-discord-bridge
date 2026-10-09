@@ -17,6 +17,10 @@ export interface ChannelMapRow {
   primary_llm?: string;
   wake_agent?: boolean;
   local_handler?: string;
+  /** Opt-in runner. grok-build plus profile skips sendPrompt. */
+  harness?: string;
+  /** Short Grok Build profile name. Example: a local profile you already run. */
+  profile?: string;
 }
 
 export interface ChannelMapFile {

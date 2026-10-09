@@ -10,8 +10,11 @@ import { sendPrompt } from "./grok-client.js";
 import {
   PLANNER_START_FAILED_TEXT,
   PLANNER_WORKING_TEXT,
+  cancelGrokBuildHold,
   forgetPlannerStatus,
+  registerGrokBuildHold,
   invokeLocalPlanner,
+  isGrokBuildRow,
   isLocalPlannerRow,
   joinCallbackUrl,
   plannerImageFields,
@@ -295,7 +298,117 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         return;
       }
 
+      if (isGrokBuildRow(mapRow)) {
+        const tGrok = monoMs();
+        let posted: Message | undefined;
+        let cancelled = false;
+        let pulse: ReturnType<typeof setInterval> | undefined;
+        const startedAt = Date.now();
+        const typing = setInterval(() => {
+          const channel = message.channel;
+          if ("sendTyping" in channel) {
+            void channel.sendTyping().catch(() => undefined);
+          }
+        }, 8_000);
+        if ("sendTyping" in message.channel) {
+          void message.channel.sendTyping().catch(() => undefined);
+        }
+        const hold = setTimeout(() => {
+          void (async () => {
+            clearInterval(typing);
+            if (cancelled) return;
+            try {
+              posted = await message.reply(PLANNER_WORKING_TEXT);
+              if (cancelled) {
+                await posted.delete().catch(() => undefined);
+                posted = undefined;
+                return;
+              }
+              rememberPlannerStatus(message.id, {
+                channelId: message.channelId,
+                statusMessageId: posted.id,
+              });
+              pulse = setInterval(() => {
+                if (cancelled || !posted) return;
+                const sec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+                void posted.edit({ content: PLANNER_WORKING_TEXT + " (" + sec + "s)" }).catch(() => undefined);
+              }, 20_000);
+            } catch (postErr) {
+              const postMsg = postErr instanceof Error ? postErr.message : String(postErr);
+              console.warn(
+                `[grok-build] working message failed msg=${message.id} err=${postMsg}`,
+              );
+            }
+          })();
+        }, 15_000);
+        registerGrokBuildHold(message.id, () => {
+          cancelled = true;
+          clearTimeout(hold);
+          clearInterval(typing);
+          if (pulse) clearInterval(pulse);
+        });
+        const grokUrl = cfg.localPlannerUrl.trim().replace(/\/plan\/?$/, "/chat");
+        void invokeLocalPlanner(
+          { ...cfg, localPlannerUrl: grokUrl },
+          {
+            userPrompt: cleaned || "(attachment)",
+            imagePath: "",
+            channelId: message.channelId,
+            slug: wakeSlug,
+            messageId: message.id,
+            callbackUrl: joinCallbackUrl(cfg.callbackBaseUrl, cfg.callbackPath),
+            dryRun: false,
+            profile: mapRow?.profile,
+            attachments: attachmentRefs,
+          },
+        ).then(async (local) => {
+          const signal = plannerUserSignal(local);
+          logTiming({
+            msg: message.id,
+            hop,
+            stage: "grokBuild",
+            ms: elapsedMs(tGrok),
+            ok: signal === "accepted",
+            exit: local.exitCode ?? "",
+          });
+          if (signal === "accepted") {
+            await message.react("✅").catch(() => undefined);
+            return;
+          }
+          if (signal === "start_failed") {
+            console.warn(
+              `[grok-build] not started msg=${message.id} status=${local.status} detail=${local.detail ?? ""}`,
+            );
+            cancelGrokBuildHold(message.id);
+            forgetPlannerStatus(message.id, posted?.id);
+            if (posted) {
+              await posted.edit({ content: PLANNER_START_FAILED_TEXT }).catch(() => undefined);
+            } else {
+              await message.reply(PLANNER_START_FAILED_TEXT).catch(() => undefined);
+            }
+            return;
+          }
+          console.warn(
+            `[grok-build] ${signal} msg=${message.id} status=${local.status} detail=${local.detail ?? ""} (not a final failure)`,
+          );
+        }).catch((localErr) => {
+          logTiming({
+            msg: message.id,
+            hop,
+            stage: "grokBuild",
+            ms: elapsedMs(tGrok),
+            ok: false,
+          });
+          const msgText = localErr instanceof Error ? localErr.message : String(localErr);
+          console.warn(
+            `[grok-build] transport msg=${message.id} err=${msgText} (not a final failure)`,
+          );
+        });
+        return;
+      }
+
       const tSend = monoMs();
+
       let accepted = false;
       try {
         const result = await sendPrompt(

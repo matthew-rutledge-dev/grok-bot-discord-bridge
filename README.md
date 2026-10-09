@@ -37,6 +37,14 @@ Local HTTP (loopback only via Compose publish):
 | `/healthz` | GET | Liveness + whether Discord is ready |
 | `/callback` | POST | Agent → Discord delivery (token required; text and/or media) |
 
+## Grok Build chat
+
+A channel-map row can skip `sendPrompt` and call a local chat process. Set `enabled`, `primary_llm` to `local`, `wake_agent` to `false`, `harness` to `grok-build`, and a non-empty `profile`. Do not set `local_handler` to the image-planner handler. The bridge changes the local planner URL from `/plan` to `/chat` and posts the profile plus attachment refs.
+
+Typing starts at once. After 15 seconds the bridge posts "Working on it." and edits that message with elapsed seconds. The callback replaces that message. If the callback arrives first, the hold is cancelled and the answer is a new reply. Image-planner rows still post "Working on it." immediately.
+
+[grokbot-discord-fleet](https://github.com/matthew-rutledge-dev/grokbot-discord-fleet) is manage and status only. It does not receive channel messages, wake agents, or call `sendPrompt`. This repository is the wake path.
+
 ## Send one prompt
 
 `scripts/send-grok-bot-prompt.mjs` posts `{ agentId, prompt }` to `GROK_BOT_SENDPROMPT_URL` with `GROK_BOT_GATEWAY_TOKEN`. Run it inside the bridge container, which already has those two values.

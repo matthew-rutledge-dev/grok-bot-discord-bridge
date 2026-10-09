@@ -5,6 +5,7 @@ import {
   PLANNER_WORKING_TEXT,
   forgetPlannerStatus,
   invokeLocalPlanner,
+  isGrokBuildRow,
   isLocalPlannerRow,
   joinCallbackUrl,
   lookupPlannerStatus,
@@ -319,5 +320,34 @@ describe("planner progress is not a timeout failure", () => {
     assert.equal(lookupPlannerStatus("1555776603705835603")?.statusMessageId, "9001");
     forgetPlannerStatus(undefined, "9001");
     assert.equal(lookupPlannerStatus("1555776603705835603"), undefined);
+  });
+});
+
+describe("isGrokBuildRow", () => {
+  it("requires harness grok-build, local, wake_agent false, and a profile", () => {
+    assert.equal(isGrokBuildRow(row({
+      slug: "example-chat",
+      channelId: "111111111111111111",
+      primary_llm: "local",
+      wake_agent: false,
+      harness: "grok-build",
+      profile: "example-profile",
+    })), true);
+  });
+  it("does not take the image planner row", () => {
+    assert.equal(isGrokBuildRow(row({
+      primary_llm: "local",
+      wake_agent: false,
+      local_handler: "rumble-pixel-planner",
+      harness: "grok-build",
+      profile: "example-profile",
+    })), false);
+  });
+  it("stays on sendPrompt without a profile", () => {
+    assert.equal(isGrokBuildRow(row({
+      primary_llm: "local",
+      wake_agent: false,
+      harness: "grok-build",
+    })), false);
   });
 });

@@ -7,7 +7,7 @@ import {
 } from "discord.js";
 import type { AppConfig } from "./config.js";
 import type { CallbackPayload } from "./types.js";
-import { forgetPlannerStatus, lookupPlannerStatus } from "./local-planner.js";
+import { cancelGrokBuildHold, forgetPlannerStatus, lookupPlannerStatus } from "./local-planner.js";
 import {
   AttachmentError,
   MAX_ATTACHMENT_BYTES,
@@ -474,6 +474,7 @@ export function createHttpServer(
           res.status(404).json({ error: "channel_not_found" });
           return;
         }
+        cancelGrokBuildHold(replyToMessageId);
         const remembered = lookupPlannerStatus(replyToMessageId);
         const editId = statusMessageId || remembered?.statusMessageId;
         if (editId) {

@@ -28,6 +28,10 @@ export interface LocalPlannerRequest {
    */
   statusMessageId?: string;
   dryRun: boolean;
+  /** Grok Build short profile. Chat hop only. */
+  profile?: string;
+  /** Discord uploads for the chat hop. Same shape as a wake attachment ref. */
+  attachments?: { url: string; filename?: string; contentType?: string; size?: number }[];
 }
 
 export interface LocalPlannerResult {
@@ -106,6 +110,25 @@ export function lookupPlannerStatus(
 }
 
 /** Drop a remembered working message by origin id and/or the status message id. */
+const grokBuildHoldCancel = new Map<string, () => void>();
+
+/** Chat hop: cancel the delayed "Working on it." timer for this Discord message. */
+export function registerGrokBuildHold(originMessageId: string, cancel: () => void): void {
+  const id = originMessageId.trim();
+  if (!id) return;
+  cancelGrokBuildHold(id);
+  grokBuildHoldCancel.set(id, cancel);
+}
+
+export function cancelGrokBuildHold(originMessageId: string | undefined): void {
+  if (!originMessageId) return;
+  const id = originMessageId.trim();
+  const cancel = grokBuildHoldCancel.get(id);
+  if (!cancel) return;
+  grokBuildHoldCancel.delete(id);
+  cancel();
+}
+
 export function forgetPlannerStatus(
   originMessageId?: string,
   statusMessageId?: string,
@@ -132,6 +155,17 @@ export function isLocalPlannerRow(
     row.wake_agent === false &&
     row.local_handler === "rumble-pixel-planner"
   );
+}
+
+/** Chat hop. Does not match the image planner trio. */
+export function isGrokBuildRow(
+  row: ChannelMapRow | null | undefined,
+): boolean {
+  if (!row?.enabled) return false;
+  if (row.primary_llm !== "local" || row.wake_agent !== false) return false;
+  if (row.harness !== "grok-build") return false;
+  if (row.local_handler === "rumble-pixel-planner") return false;
+  return typeof row.profile === "string" && row.profile.trim().length > 0;
 }
 
 
