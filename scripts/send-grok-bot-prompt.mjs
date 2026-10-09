@@ -10,8 +10,17 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const replyPath = [
+  "Reply on Discord through your Discord connector.",
+  "This send did not come from a Discord channel and does not include a channel id or a callback.",
+  "accepted:true only means you were woken.",
+  "A reply that stays in the Grok Bot session is not delivered to Discord.",
+  "Post the answer with the bridge POST /callback for the channel you were asked about, or through the Grok Bot Discord connector.",
+].join(" ");
+
 const alias = (process.argv[2] || "").trim();
-const prompt = process.argv.slice(3).join(" ").trim();
+const promptBody = process.argv.slice(3).join(" ").trim();
+const prompt = promptBody ? `${promptBody}\n\n${replyPath}` : "";
 if (!alias || !prompt) {
   console.log("usage: node scripts/send-grok-bot-prompt.mjs <alias> <prompt>");
   process.exit(2);

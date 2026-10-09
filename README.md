@@ -106,6 +106,8 @@ Do not commit the filled-in roster.
 
 `200` with `accepted: true` means the bot was woken. The body does not contain the bot's answer.
 
+That request does not tell the bot where to reply. A `sendPrompt` that did not start from a Discord message carries no channel id and no callback. The bot's normal reply stays in the Grok Bot session and is not posted to Discord. The script adds this instruction to every prompt: reply on Discord through the Discord connector, using `POST /callback` for the channel named in the prompt, or the Grok Bot Discord connector. Put the channel in your own prompt text. The script does not know it.
+
 ## Security model (deny-by-default)
 
 Evaluation order for **guild** messages:
