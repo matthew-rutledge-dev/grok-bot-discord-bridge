@@ -27,6 +27,7 @@ import {
   hashIdentity,
 } from "./rate-limit.js";
 import { dmRecipientAllowed } from "./security.js";
+import { playToneInChannel } from "./voice-play.js";
 
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
@@ -628,6 +629,37 @@ export function createHttpServer(
       }
     },
   );
+
+  app.post("/voice/play", async (req: Request, res: Response) => {
+    if (!cfg.callbackToken) {
+      res.status(503).json({ error: "callback_token_not_configured" });
+      return;
+    }
+    const { token } = extractCallbackAuth(req);
+    if (!token || token !== cfg.callbackToken) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const discord = getDiscord();
+    if (!discord?.isReady()) {
+      res.status(503).json({ error: "discord_not_ready" });
+      return;
+    }
+    const channelId = cleanId((req.body as { channelId?: unknown })?.channelId);
+    if (!channelId || !/^[0-9]{17,20}$/.test(channelId)) {
+      res.status(400).json({ error: "channel_id_required" });
+      return;
+    }
+    try {
+      await playToneInChannel(discord, channelId);
+      res.status(200).json({ ok: true, channelId });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[voice] play failed:", msg);
+      const status = msg === "not_a_voice_channel" ? 400 : 502;
+      res.status(status).json({ error: msg === "not_a_voice_channel" ? msg : "voice_play_failed" });
+    }
+  });
 
   return app;
 }

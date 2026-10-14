@@ -5,17 +5,19 @@
   "description": "Thin Discord Gateway \u2192 Grok Bot sendPrompt bridge (deny-by-default)",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts src/local-planner.test.ts src/security.test.ts"
+    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts src/local-planner.test.ts src/security.test.ts src/voice-play.test.ts"
   },
   "dependencies": {
+    "@discordjs/voice": "0.19.2",
     "discord.js": "^14.16.3",
+    "opusscript": "0.0.8",
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1"
   },
