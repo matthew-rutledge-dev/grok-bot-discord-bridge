@@ -175,7 +175,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         agentId = authz.agentId;
         sendUrl = authz.sendPromptUrl;
         wakeSlug = cfg.security.dm?.slug || "dm";
-        wakeAlias = cfg.security.dm?.alias || authz.agentId || "";
+        wakeAlias = authz.alias || cfg.security.dm?.alias || authz.agentId || "";
       }
 
       if (!agentId || !sendUrl) {

@@ -26,6 +26,7 @@ import {
   SlidingWindowRateLimiter,
   hashIdentity,
 } from "./rate-limit.js";
+import { dmRecipientAllowed } from "./security.js";
 
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
@@ -331,6 +332,7 @@ export function createHttpServer(
       );
 
       let channelId: string | undefined;
+      let userId: string | undefined;
       let content: string | undefined;
       let replyToMessageId: string | undefined;
       let statusMessageId: string | undefined;
@@ -343,6 +345,7 @@ export function createHttpServer(
           const body = req.body as Record<string, unknown>;
           channelId =
             typeof body.channelId === "string" ? body.channelId : undefined;
+          userId = cleanId(body.userId);
           content =
             typeof body.content === "string" ? body.content : undefined;
           replyToMessageId =
@@ -365,7 +368,8 @@ export function createHttpServer(
           files = resolveMultipartFiles(uploaded);
         } else {
           const body = req.body as CallbackPayload;
-          channelId = body?.channelId;
+          channelId = cleanId(body?.channelId);
+          userId = cleanId(body?.userId);
           content = typeof body?.content === "string" ? body.content : undefined;
           replyToMessageId = body?.replyToMessageId;
           statusMessageId = cleanId(body?.statusMessageId);
@@ -428,6 +432,48 @@ export function createHttpServer(
         });
         res.status(400).json({ error: "content_or_attachment_required" });
         return;
+      }
+      if (!channelId && userId) {
+        if (!dmRecipientAllowed(cfg, userId)) {
+          logTiming({
+            msg: replyToMessageId,
+            stage: "callback_total",
+            ms: elapsedMs(tCallback),
+            idle_ms: idleMs,
+            ok: false,
+          });
+          res.status(403).json({ error: "user_not_allowlisted" });
+          return;
+        }
+        const discordForDm = getDiscord();
+        if (!discordForDm?.isReady()) {
+          logTiming({
+            msg: replyToMessageId,
+            stage: "callback_total",
+            ms: elapsedMs(tCallback),
+            idle_ms: idleMs,
+            ok: false,
+          });
+          res.status(503).json({ error: "discord_not_ready" });
+          return;
+        }
+        try {
+          const recipient = await discordForDm.users.fetch(userId);
+          const dm = await recipient.createDM();
+          channelId = dm.id;
+        } catch (dmErr) {
+          const dmMsg = dmErr instanceof Error ? dmErr.message : String(dmErr);
+          console.error(`[callback] dm open failed user=${userId} err=${dmMsg}`);
+          logTiming({
+            msg: replyToMessageId,
+            stage: "callback_total",
+            ms: elapsedMs(tCallback),
+            idle_ms: idleMs,
+            ok: false,
+          });
+          res.status(404).json({ error: "dm_open_failed" });
+          return;
+        }
       }
       if (!channelId) {
         logTiming({

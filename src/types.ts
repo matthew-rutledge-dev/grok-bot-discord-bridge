@@ -40,11 +40,22 @@ export interface GuildSecurity {
   allowChannels: string[];
 }
 
+/** One person's direct-message agent. A string is the agent id. */
+export interface DmAgentAssignment {
+  agentId: string;
+  alias?: string;
+}
+
 export interface DmSecurity {
   policy: "pairing" | "allowlist" | "disabled";
   allowFrom: string[];
   ownerId?: string;
   defaultAgentId?: string | null;
+  /**
+   * Optional per-person agent. Missing and unknown users use defaultAgentId.
+   * The user must still pass the DM allow list.
+   */
+  agentsByUser?: Record<string, string | DmAgentAssignment>;
   /** Optional DM wake slug (default: dm). */
   slug?: string;
   /** Optional DM agent alias for thin JSON map. */
@@ -56,6 +67,11 @@ export interface SecurityFile {
   description?: string;
   guilds: Record<string, GuildSecurity>;
   dm: DmSecurity;
+  /**
+   * Admin user ids per connected host. Independent of Discord allow lists.
+   * Keys are host names. An absent host or an empty list means nobody.
+   */
+  hostAdmins?: Record<string, string[]>;
   ignoreBots: boolean;
 }
 

@@ -22,7 +22,18 @@
       "333333333333333333"
     ],
     "ownerId": "222222222222222222",
-    "defaultAgentId": ""
+    "defaultAgentId": "",
+    "agentsByUser": {
+      "333333333333333333": {
+        "agentId": "example-agent",
+        "alias": "Example_person"
+      }
+    }
+  },
+  "hostAdmins": {
+    "example-host-a": ["222222222222222222"],
+    "example-host-b": ["222222222222222222"],
+    "example-host-c": ["222222222222222222", "333333333333333333"]
   },
   "ignoreBots": true
 }

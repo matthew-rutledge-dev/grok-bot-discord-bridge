@@ -21,6 +21,8 @@ export interface AuthzResult {
   reason?: DenyReason;
   mapRow?: ChannelMapRow;
   agentId?: string;
+  /** Direct-message alias when this person has their own agent. */
+  alias?: string;
   sendPromptUrl?: string;
   requireMention?: boolean;
 }
@@ -178,7 +180,8 @@ export function authorizeDm(
     }
   }
 
-  const agentId = dm.defaultAgentId || undefined;
+  const assigned = resolveDmAssignment(dm.agentsByUser?.[author.id]);
+  const agentId = assigned?.agentId || dm.defaultAgentId || undefined;
   if (!agentId) {
     return { ok: false, reason: "dm_no_agent" };
   }
@@ -186,8 +189,45 @@ export function authorizeDm(
   return {
     ok: true,
     agentId,
+    alias: assigned?.alias,
     sendPromptUrl: cfg.sendPromptUrl,
   };
+}
+
+function resolveDmAssignment(
+  raw: string | { agentId?: string | null; alias?: string } | undefined,
+): { agentId: string; alias?: string } | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === "string") {
+    const agentId = raw.trim();
+    return agentId ? { agentId } : undefined;
+  }
+  const agentId = (raw.agentId ?? "").trim();
+  if (!agentId) return undefined;
+  const alias = raw.alias?.trim();
+  return alias ? { agentId, alias } : { agentId };
+}
+
+/** True when this user may receive an outbound bridge DM. */
+export function dmRecipientAllowed(cfg: AppConfig, userId: string): boolean {
+  const dm = cfg.security.dm;
+  const policy = cfg.dmPolicy || dm.policy || "pairing";
+  if (policy === "disabled") return false;
+  const allow = [...(dm.allowFrom ?? []), ...cfg.allowFrom];
+  if (userAllowed(userId, allow, [])) return true;
+  if (pairedUsers.has(userId)) return true;
+  const owner = dm.ownerId || cfg.ownerId;
+  return Boolean(owner && owner === userId);
+}
+
+/** True when userId is on that connected host's admin list. */
+export function isHostAdmin(
+  cfg: AppConfig,
+  host: string,
+  userId: string,
+): boolean {
+  const list = cfg.security.hostAdmins?.[host] ?? [];
+  return list.includes(userId);
 }
 
 export function stripBotMention(content: string, botUserId: string | null): string {

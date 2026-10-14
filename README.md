@@ -128,6 +128,8 @@ Evaluation order for **guild** messages:
 
 Owner id seeds pairing approvals. No agent is invoked until an allow path succeeds.
 
+A person with no `dm.agentsByUser` entry uses `dm.defaultAgentId`. They still have to be on the DM allow list. `hostAdmins` is a separate map of user ids per connected host. It does not grant Discord access. Shipped examples use placeholder ids only.
+
 ### Example config (placeholders only)
 
 Copy `config/security.json` and `config/channel-map.json`, then replace every placeholder snowflake and agent id with **your** values before go-live. Shipped examples use fake IDs so the repo stays installer-neutral.
@@ -248,7 +250,7 @@ Content-Type: application/json
   "content": "optional markdown-ish text",
   "replyToMessageId": "<optional>",
   "statusMessageId": "<optional, edit this message instead of sending>",
-  "userId": "<optional>",
+  "userId": "<optional; opens a DM when channelId is omitted and this user is on the DM allow list>",
   "agentId": "<optional>",
   "attachments": [
     { "filename": "shot.png", "contentType": "image/png", "data": "<base64 no data-URL prefix>" },
