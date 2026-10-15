@@ -1,39 +1,61 @@
 {
   "version": 1,
-  "description": "Deny-by-default security. Order: guild → users → roles → channels → agent map. Ignore bots. DMs use pairing/allowlist. Replace all placeholder snowflakes before go-live.",
+  "description": "Deny-by-default security. Order: guild \u2192 users \u2192 roles \u2192 channels \u2192 agent map. Ignore bots. DMs use pairing/allowlist. Live operator rows (ids only).",
   "guilds": {
-    "111111111111111111": {
+    "949100784186966066": {
       "enabled": true,
-      "label": "example-guild (placeholder — replace with your guild)",
+      "label": "KittenClubbers",
       "requireMention": false,
-      "ownerId": "222222222222222222",
+      "ownerId": "339560375924031498",
       "allowFrom": [
-        "222222222222222222",
-        "333333333333333333"
+        "339560375924031498",
+        "354095575282614272",
+        "1019057691274006608"
       ],
       "allowRoles": [],
-      "allowChannels": []
+      "allowChannels": [
+        "1509249561947013131",
+        "1509247663646965770",
+        "1509234936089936035",
+        "1509249238419378176",
+        "1509249242990903386",
+        "1509249235839877341",
+        "1509249240566595684",
+        "1557418597918314496"
+      ]
     }
   },
   "dm": {
     "policy": "pairing",
     "allowFrom": [
-      "222222222222222222",
-      "333333333333333333"
+      "339560375924031498",
+      "354095575282614272",
+      "1019057691274006608"
     ],
-    "ownerId": "222222222222222222",
-    "defaultAgentId": "",
+    "ownerId": "339560375924031498",
+    "defaultAgentId": "85a47469-e311-49e0-91f4-68301a7f745e",
     "agentsByUser": {
-      "333333333333333333": {
-        "agentId": "example-agent",
-        "alias": "Example_person"
+      "354095575282614272": {
+        "agentId": "b215c938-e623-4ec0-b0a5-03591a941995",
+        "alias": "Hinata_desktop"
+      },
+      "1019057691274006608": {
+        "agentId": "fb66edda-fe4f-4c6c-9ba9-f53da18980f1",
+        "alias": "Milim_kay"
       }
     }
   },
   "hostAdmins": {
-    "example-host-a": ["222222222222222222"],
-    "example-host-b": ["222222222222222222"],
-    "example-host-c": ["222222222222222222", "333333333333333333"]
+    "i9rumble": [
+      "339560375924031498"
+    ],
+    "servergen1": [
+      "339560375924031498"
+    ],
+    "zoomzoom": [
+      "339560375924031498",
+      "354095575282614272"
+    ]
   },
   "ignoreBots": true
 }

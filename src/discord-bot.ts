@@ -6,7 +6,7 @@ import {
   type Message,
 } from "discord.js";
 import type { AppConfig } from "./config.js";
-import { sendPrompt } from "./grok-client.js";
+import { sendPromptWithRetry } from "./grok-client.js";
 import {
   PLANNER_START_FAILED_TEXT,
   PLANNER_WORKING_TEXT,
@@ -412,7 +412,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
 
       let accepted = false;
       try {
-        const result = await sendPrompt(
+        const result = await sendPromptWithRetry(
           sendUrl,
           {
             agentId,

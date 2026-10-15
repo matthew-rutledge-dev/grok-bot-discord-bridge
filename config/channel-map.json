@@ -1,27 +1,102 @@
 {
   "version": 1,
-  "description": "Map Discord channel IDs → Grok Bot agentIds. Rows with enabled=false are ignored (deny). Replace placeholders before enabling.",
+  "description": "Discord channel \u2212 Grok Bot agentId. deny-by-default when enabled=false.",
   "defaultSendPromptUrl": null,
   "channels": [
     {
-      "enabled": false,
-      "channelId": "444444444444444444",
+      "enabled": true,
+      "channelId": "1509249561947013131",
       "slug": "ai-gen-chat",
-      "alias": "chat-agent",
-      "label": "ai-gen-chat (stub — enable after token + agentId)",
-      "agentId": "",
+      "alias": "Rimuru_orch",
+      "label": "ai-gen-chat \u2192 Rimuru_orch",
+      "agentId": "85a47469-e311-49e0-91f4-68301a7f745e",
       "sendPromptUrl": null,
       "requireMention": false
     },
     {
-      "enabled": false,
-      "channelId": "555555555555555555",
+      "enabled": true,
+      "channelId": "1509247663646965770",
       "slug": "discord-bot-infra",
-      "alias": "ops-agent",
-      "label": "discord-bot-infra (stub)",
-      "agentId": "",
+      "alias": "Diablo_server",
+      "label": "discord-bot-infra \u2192 Diablo_server",
+      "agentId": "ee5f30b5-4f8b-4c76-9f89-60f2fd5fdaec",
       "sendPromptUrl": null,
       "requireMention": false
+    },
+    {
+      "enabled": true,
+      "channelId": "1509234936089936035",
+      "slug": "servergen1-tasks",
+      "alias": "Diablo_server",
+      "label": "servergen1-tasks \u2192 Diablo_server",
+      "agentId": "ee5f30b5-4f8b-4c76-9f89-60f2fd5fdaec",
+      "sendPromptUrl": null,
+      "requireMention": false
+    },
+    {
+      "enabled": true,
+      "channelId": "1509249238419378176",
+      "slug": "ai-gen-images",
+      "alias": "Pixel_edit",
+      "label": "ai-gen-images \u2192 Pixel_edit",
+      "agentId": "95c16f3b-c951-442d-8e18-40c5976d3d7b",
+      "sendPromptUrl": null,
+      "requireMention": false,
+      "handler": "local-planner",
+      "primary_llm": "local",
+      "wake_agent": false,
+      "local_handler": "rumble-pixel-planner"
+    },
+    {
+      "enabled": true,
+      "channelId": "1509249242990903386",
+      "slug": "ai-gen-video",
+      "alias": "Pixel_edit",
+      "label": "ai-gen-video \u2192 Pixel_edit",
+      "agentId": "95c16f3b-c951-442d-8e18-40c5976d3d7b",
+      "sendPromptUrl": null,
+      "requireMention": false,
+      "handler": "local-planner",
+      "primary_llm": "local",
+      "wake_agent": false,
+      "local_handler": "rumble-pixel-planner"
+    },
+    {
+      "enabled": true,
+      "channelId": "1509249235839877341",
+      "slug": "ai-landscaping",
+      "alias": "Pixel_edit",
+      "label": "ai-landscaping \u2192 Pixel_edit",
+      "agentId": "95c16f3b-c951-442d-8e18-40c5976d3d7b",
+      "sendPromptUrl": null,
+      "requireMention": false,
+      "handler": "local-planner",
+      "primary_llm": "local",
+      "wake_agent": false,
+      "local_handler": "rumble-pixel-planner"
+    },
+    {
+      "enabled": true,
+      "channelId": "1509249240566595684",
+      "slug": "ai-gen-audio",
+      "alias": "youtube_upload",
+      "label": "ai-gen-audio \u2192 youtube_upload",
+      "agentId": "9bb81931-e081-4439-8773-f4a5deb81385",
+      "sendPromptUrl": null,
+      "requireMention": false
+    },
+    {
+      "enabled": true,
+      "channelId": "1557418597918314496",
+      "slug": "ai-llm-local",
+      "alias": "",
+      "label": "ai-llm-local local chat",
+      "requireMention": false,
+      "primary_llm": "local",
+      "wake_agent": false,
+      "harness": "grok-build",
+      "profile": "rumble-qwen38",
+      "agentId": "00000000-0000-0000-0000-000000000000"
     }
   ]
 }
