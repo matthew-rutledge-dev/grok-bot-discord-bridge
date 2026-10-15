@@ -161,11 +161,12 @@ Prompt shape (unchanged header + thin JSON; optional attachments):
 
 ```
 d:<slug>:<messageId>
-{"id":"d:<slug>:<messageId>","g":"<guildId|null>","u":"<userId>","map":"<alias>","a":[{"url":"...","filename":"...","contentType":"...","size":123}]}
+{"id":"d:<slug>:<messageId>","g":"<guildId|null>","u":"<userId>","map":"<alias>","c":"<channelId>","a":[{"url":"...","filename":"...","contentType":"...","size":123}]}
 <human text>
 ```
 
 - Text-only wakes omit `a` (same as before).
+- **`c`** (optional) is the Discord channel snowflake (`message.channelId`) for every inbound, DMs included. Bots can reply with `POST /callback` `channelId=c`; DMs can still use `userId` instead. Readers must treat `c` as optional (older wakes lack it); key order is not guaranteed. The same value is on sendPrompt **`metadata.discordChannelId`**.
 - When the Discord message has attachments, thin JSON includes **`a`**: an array of URL refs (not base64) using Discord CDN `attachment.url` (fallback `proxyURL`), plus optional `filename`, `contentType`, `size`.
 - The same refs are also placed on sendPrompt **`metadata.attachments`**.
 - Attachment-only messages (no text) still wake.

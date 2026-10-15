@@ -35,7 +35,7 @@ export async function sendPrompt(
     parsed = JSON.parse(text) as SendPromptResponse;
   } catch {
     throw new Error(
-      `sendPrompt non-JSON response status=${res.status} body=${text.slice(0, 200)}`,
+      `sendPrompt non-JSON response HTTP ${res.status} body=${text.slice(0, 200)}`,
     );
   }
 

@@ -43,3 +43,12 @@ describe("isTransientSendError", () => {
     );
   });
 });
+
+describe("isTransientSendError non-JSON", () => {
+  it("retries a non-JSON 502 from the tunnel", () => {
+    assert.equal(
+      isTransientSendError(new Error("sendPrompt non-JSON response HTTP 502 body=<html>")),
+      true,
+    );
+  });
+});
