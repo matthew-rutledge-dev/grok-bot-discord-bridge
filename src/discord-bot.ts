@@ -54,7 +54,7 @@ export function createDiscordClient(): Client {
   });
 }
 
-/** Pure wake prompt: `d:<slug>:<message.id>`, thin JSON `{id,g,u,map,a?}`, human text. */
+/** Pure wake prompt: `d:<slug>:<message.id>`, thin JSON `{id,g,u,c?,map,a?}`, human text. */
 export function formatWakePrompt(args: {
   slug: string;
   messageId: string;
@@ -73,6 +73,8 @@ export function formatWakePrompt(args: {
     u: args.userId,
     map: args.alias,
   };
+  // Optional `c`: Discord channel snowflake (DMs too) so replies can target it directly.
+  if (args.channelId) thinObj.c = args.channelId;
   if (args.attachments && args.attachments.length > 0) {
     // Short key `a` keeps the thin envelope small; URL refs only (no base64).
     thinObj.a = args.attachments.map((r) => {
