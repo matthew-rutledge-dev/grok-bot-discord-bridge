@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { sendPrompt } from "./grok-client.js";
+import { isTransientSendError, sendPrompt } from "./grok-client.js";
 
 describe("sendPrompt fail-closed gateway token", () => {
   it("refuses when gatewayToken is undefined", async () => {
@@ -23,6 +23,23 @@ describe("sendPrompt fail-closed gateway token", () => {
           "   ",
         ),
       /fail-closed|GROK_BOT_GATEWAY_TOKEN/,
+    );
+  });
+});
+
+describe("isTransientSendError", () => {
+  it("retries a Cloudflare tunnel 530 and not an auth refusal", () => {
+    assert.equal(
+      isTransientSendError(new Error("sendPrompt HTTP 530: tunnel")),
+      true,
+    );
+    assert.equal(
+      isTransientSendError(new Error("sendPrompt HTTP 401: no")),
+      false,
+    );
+    assert.equal(
+      isTransientSendError(new Error("sendPrompt refused: GROK_BOT_GATEWAY_TOKEN blank")),
+      false,
     );
   });
 });
