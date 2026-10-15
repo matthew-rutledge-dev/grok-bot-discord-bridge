@@ -46,3 +46,58 @@ export async function sendPrompt(
   }
   return parsed;
 }
+
+/** Tunnel and gateway blips. Auth and bad requests are not retried. */
+export function isTransientSendError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("GROK_BOT_GATEWAY_TOKEN")) return false;
+  const status = /HTTP (\d{3})/.exec(msg);
+  if (status) {
+    const code = Number(status[1]);
+    return (
+      code === 408 ||
+      code === 429 ||
+      code === 502 ||
+      code === 503 ||
+      code === 504 ||
+      (code >= 520 && code <= 530)
+    );
+  }
+  return /fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network|socket/i.test(msg);
+}
+
+/**
+ * One immediate try plus two delayed tries for a tunnel blip.
+ * The 530/1033 case is Cloudflare being unable to reach the tunnel, not a bridge reject.
+ */
+export async function sendPromptWithRetry(
+  url: string,
+  body: SendPromptRequest,
+  gatewayToken?: string,
+  opts?: { sleep?: (ms: number) => Promise<void> },
+): Promise<SendPromptResponse> {
+  const sleep = opts?.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const waits = [0, 2000, 5000];
+  let last: unknown;
+  for (let i = 0; i < waits.length; i++) {
+    if (waits[i] > 0) await sleep(waits[i]);
+    try {
+      return await sendPrompt(url, body, gatewayToken);
+    } catch (err) {
+      last = err;
+      const text = err instanceof Error ? err.message : String(err);
+      if (!isTransientSendError(err) || i === waits.length - 1) {
+        if (isTransientSendError(err)) {
+          console.error(
+            `[sendPrompt] tunnel or gateway still unreachable after ${waits.length} tries: ${text.slice(0, 300)}`,
+          );
+        }
+        throw err;
+      }
+      console.warn(
+        `[sendPrompt] transient try ${i + 1}/${waits.length} ${text.slice(0, 180)}`,
+      );
+    }
+  }
+  throw last;
+}
