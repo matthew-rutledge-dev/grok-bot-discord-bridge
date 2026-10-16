@@ -43,7 +43,7 @@ export function synthesizeGrokVoice(
       ws.send(JSON.stringify({
         type: "session.update",
         session: {
-          voice: "eve",
+          voice: "ara",
           instructions: "Read the user message aloud exactly. Do not add words.",
           turn_detection: null,
           audio: {
