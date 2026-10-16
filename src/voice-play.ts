@@ -27,6 +27,15 @@ export async function playToneInChannel(
   client: Client,
   channelId: string,
 ): Promise<void> {
+  await playPcmInChannel(client, channelId, buildTonePcm(2));
+}
+
+/** Play 48 kHz stereo s16le PCM, then leave the voice channel. */
+export async function playPcmInChannel(
+  client: Client,
+  channelId: string,
+  pcm: Buffer,
+): Promise<void> {
   const channel = await client.channels.fetch(channelId);
   if (!channel || channel.type !== ChannelType.GuildVoice || !channel.guild) {
     throw new Error("not_a_voice_channel");
@@ -38,16 +47,21 @@ export async function playToneInChannel(
     adapterCreator: channel.guild.voiceAdapterCreator,
     selfDeaf: true,
   });
+  const seconds = pcm.length / (48000 * 2 * 2);
   try {
     await voice.entersState(connection, voice.VoiceConnectionStatus.Ready, 15_000);
     const player = voice.createAudioPlayer();
     connection.subscribe(player);
-    const resource = voice.createAudioResource(Readable.from(buildTonePcm(2)), {
+    const resource = voice.createAudioResource(Readable.from(pcm), {
       inputType: voice.StreamType.Raw,
     });
     player.play(resource);
     await voice.entersState(player, voice.AudioPlayerStatus.Playing, 10_000);
-    await voice.entersState(player, voice.AudioPlayerStatus.Idle, 15_000);
+    await voice.entersState(
+      player,
+      voice.AudioPlayerStatus.Idle,
+      Math.max(15_000, Math.ceil(seconds * 1000) + 5_000),
+    );
   } finally {
     connection.destroy();
   }

@@ -27,7 +27,8 @@ import {
   hashIdentity,
 } from "./rate-limit.js";
 import { dmRecipientAllowed } from "./security.js";
-import { playToneInChannel } from "./voice-play.js";
+import { synthesizePiper, toVoicePcm } from "./piper.js";
+import { playPcmInChannel, playToneInChannel } from "./voice-play.js";
 
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
@@ -650,9 +651,18 @@ export function createHttpServer(
       res.status(400).json({ error: "channel_id_required" });
       return;
     }
+    const text =
+      typeof (req.body as { text?: unknown })?.text === "string"
+        ? (req.body as { text: string }).text.trim().slice(0, 240)
+        : "";
     try {
-      await playToneInChannel(discord, channelId);
-      res.status(200).json({ ok: true, channelId });
+      if (text) {
+        const clip = await synthesizePiper(text);
+        await playPcmInChannel(discord, channelId, toVoicePcm(clip));
+      } else {
+        await playToneInChannel(discord, channelId);
+      }
+      res.status(200).json({ ok: true, channelId, spoke: Boolean(text) });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[voice] play failed:", msg);
