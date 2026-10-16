@@ -27,6 +27,7 @@ import {
   hashIdentity,
 } from "./rate-limit.js";
 import { dmRecipientAllowed } from "./security.js";
+import { resolveVoiceEngine, synthesizeGrokVoice } from "./grok-voice.js";
 import { synthesizePiper, toVoicePcm } from "./piper.js";
 import { playPcmInChannel, playToneInChannel } from "./voice-play.js";
 
@@ -651,23 +652,31 @@ export function createHttpServer(
       res.status(400).json({ error: "channel_id_required" });
       return;
     }
-    const text =
-      typeof (req.body as { text?: unknown })?.text === "string"
-        ? (req.body as { text: string }).text.trim().slice(0, 240)
-        : "";
+    const body = req.body as { text?: unknown; voice?: unknown };
+    const text = typeof body?.text === "string" ? body.text.trim().slice(0, 240) : "";
+    let engine: "local" | "grok" = "local";
+    try {
+      engine = resolveVoiceEngine(body?.voice);
+    } catch {
+      res.status(400).json({ error: "voice_engine" });
+      return;
+    }
     try {
       if (text) {
-        const clip = await synthesizePiper(text);
+        const clip = engine === "grok"
+          ? await synthesizeGrokVoice(text)
+          : await synthesizePiper(text);
         await playPcmInChannel(discord, channelId, toVoicePcm(clip));
       } else {
         await playToneInChannel(discord, channelId);
       }
-      res.status(200).json({ ok: true, channelId, spoke: Boolean(text) });
+      res.status(200).json({ ok: true, channelId, spoke: Boolean(text), engine });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[voice] play failed:", msg);
-      const status = msg === "not_a_voice_channel" ? 400 : 502;
-      res.status(status).json({ error: msg === "not_a_voice_channel" ? msg : "voice_play_failed" });
+      const known = msg === "not_a_voice_channel" || msg === "grok_voice_not_configured";
+      const status = msg === "not_a_voice_channel" ? 400 : msg === "grok_voice_not_configured" ? 503 : 502;
+      res.status(status).json({ error: known ? msg : "voice_play_failed" });
     }
   });
 

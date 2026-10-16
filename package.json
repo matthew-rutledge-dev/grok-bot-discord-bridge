@@ -2,7 +2,7 @@
   "name": "grok-bot-discord-bridge",
   "version": "0.2.9",
   "private": true,
-  "description": "Thin Discord Gateway \u2192 Grok Bot sendPrompt bridge (deny-by-default)",
+  "description": "Thin Discord Gateway → Grok Bot sendPrompt bridge (deny-by-default)",
   "type": "module",
   "engines": {
     "node": ">=22.12.0"
@@ -12,14 +12,15 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts src/local-planner.test.ts src/security.test.ts src/voice-play.test.ts src/piper.test.ts src/wake-prompt.test.ts"
+    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts src/local-planner.test.ts src/security.test.ts src/voice-play.test.ts src/piper.test.ts src/grok-voice.test.ts src/wake-prompt.test.ts"
   },
   "dependencies": {
     "@discordjs/voice": "0.19.2",
     "discord.js": "^14.16.3",
-    "opusscript": "0.0.8",
     "express": "^4.21.2",
-    "multer": "^1.4.5-lts.1"
+    "multer": "^1.4.5-lts.1",
+    "opusscript": "0.0.8",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
