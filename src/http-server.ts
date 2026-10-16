@@ -27,6 +27,7 @@ import {
   hashIdentity,
 } from "./rate-limit.js";
 import { dmRecipientAllowed } from "./security.js";
+import { mixLocalBed } from "./mix.js";
 import { resolveVoiceEngine, synthesizeGrokVoice } from "./grok-voice.js";
 import { synthesizePiper, toVoicePcm } from "./piper.js";
 import { playPcmInChannel, playToneInChannel } from "./voice-play.js";
@@ -652,7 +653,7 @@ export function createHttpServer(
       res.status(400).json({ error: "channel_id_required" });
       return;
     }
-    const body = req.body as { text?: unknown; voice?: unknown };
+    const body = req.body as { text?: unknown; voice?: unknown; bed?: unknown };
     const text = typeof body?.text === "string" ? body.text.trim().slice(0, 240) : "";
     let engine: "local" | "grok" = "local";
     try {
@@ -666,11 +667,20 @@ export function createHttpServer(
         const clip = engine === "grok"
           ? await synthesizeGrokVoice(text)
           : await synthesizePiper(text);
-        await playPcmInChannel(discord, channelId, toVoicePcm(clip));
+        let pcm = toVoicePcm(clip);
+        const bed = body?.bed === true;
+        if (bed) pcm = mixLocalBed(pcm);
+        await playPcmInChannel(discord, channelId, pcm);
       } else {
         await playToneInChannel(discord, channelId);
       }
-      res.status(200).json({ ok: true, channelId, spoke: Boolean(text), engine });
+      res.status(200).json({
+        ok: true,
+        channelId,
+        spoke: Boolean(text),
+        engine,
+        bed: body?.bed === true,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error("[voice] play failed:", msg);
