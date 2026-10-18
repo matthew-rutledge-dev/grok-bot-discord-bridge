@@ -12,7 +12,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts src/local-planner.test.ts src/security.test.ts src/voice-play.test.ts src/piper.test.ts src/grok-voice.test.ts src/mix.test.ts src/wake-prompt.test.ts"
+    "test": "tsx --test src/attachments.test.ts src/timing.test.ts src/grok-client.test.ts src/rate-limit.test.ts src/http-server.test.ts src/local-planner.test.ts src/security.test.ts src/voice-play.test.ts src/piper.test.ts src/grok-voice.test.ts src/mix.test.ts src/voice-mix.test.ts src/wake-prompt.test.ts"
   },
   "dependencies": {
     "@discordjs/voice": "0.19.2",

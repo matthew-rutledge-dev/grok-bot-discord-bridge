@@ -31,6 +31,13 @@ import { mixLocalBed } from "./mix.js";
 import { resolveVoiceEngine, synthesizeGrokVoice } from "./grok-voice.js";
 import { synthesizePiper, toVoicePcm } from "./piper.js";
 import { playPcmInChannel, playToneInChannel } from "./voice-play.js";
+import { clampGain, wavToVoicePcm } from "./voice-mix.js";
+import {
+  closeVoiceStream,
+  openVoiceStream,
+  voiceStreamMixer,
+  voiceStreamStatus,
+} from "./voice-stream.js";
 
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
@@ -662,6 +669,10 @@ export function createHttpServer(
       res.status(400).json({ error: "voice_engine" });
       return;
     }
+    if (voiceStreamStatus().open) {
+      res.status(409).json({ error: "voice_stream_open" });
+      return;
+    }
     try {
       if (text) {
         const clip = engine === "grok"
@@ -687,6 +698,121 @@ export function createHttpServer(
       const known = msg === "not_a_voice_channel" || msg === "grok_voice_not_configured";
       const status = msg === "not_a_voice_channel" ? 400 : msg === "grok_voice_not_configured" ? 503 : 502;
       res.status(status).json({ error: known ? msg : "voice_play_failed" });
+    }
+  });
+
+  app.post("/voice/stream", async (req: Request, res: Response) => {
+    if (!cfg.callbackToken) {
+      res.status(503).json({ error: "callback_token_not_configured" });
+      return;
+    }
+    const { token } = extractCallbackAuth(req);
+    if (!token || token !== cfg.callbackToken) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const discord = getDiscord();
+    if (!discord?.isReady()) {
+      res.status(503).json({ error: "discord_not_ready" });
+      return;
+    }
+    const body = req.body as {
+      op?: unknown;
+      channelId?: unknown;
+      id?: unknown;
+      text?: unknown;
+      voice?: unknown;
+      loop?: unknown;
+      gain?: unknown;
+      audioBase64?: unknown;
+    };
+    const op = typeof body.op === "string" ? body.op : "";
+    if (op === "status") {
+      res.status(200).json({ ok: true, ...voiceStreamStatus() });
+      return;
+    }
+    if (op === "close") {
+      res.status(200).json({ ok: true, closed: closeVoiceStream() });
+      return;
+    }
+    if (op === "open") {
+      const channelId = cleanId(body.channelId);
+      if (!channelId || !/^[0-9]{17,20}$/.test(channelId)) {
+        res.status(400).json({ error: "channel_id_required" });
+        return;
+      }
+      try {
+        await openVoiceStream(discord, channelId);
+        res.status(200).json({ ok: true, ...voiceStreamStatus() });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[voice] stream open failed:", msg);
+        const status = msg === "not_a_voice_channel" ? 400 : 502;
+        res.status(status).json({ error: msg === "not_a_voice_channel" ? msg : "voice_stream_failed" });
+      }
+      return;
+    }
+    const mixer = voiceStreamMixer();
+    if (!mixer) {
+      res.status(409).json({ error: "voice_stream_closed" });
+      return;
+    }
+    if (op === "remove") {
+      const id = cleanId(body.id);
+      if (!id) {
+        res.status(400).json({ error: "layer_id_required" });
+        return;
+      }
+      res.status(200).json({ ok: true, removed: mixer.remove(id), ...voiceStreamStatus() });
+      return;
+    }
+    if (op !== "add") {
+      res.status(400).json({ error: "voice_stream_op" });
+      return;
+    }
+    const id = cleanId(body.id);
+    if (!id) {
+      res.status(400).json({ error: "layer_id_required" });
+      return;
+    }
+    const text = typeof body.text === "string" ? body.text.trim().slice(0, 240) : "";
+    const audioBase64 = typeof body.audioBase64 === "string" ? body.audioBase64 : "";
+    if (Boolean(text) === Boolean(audioBase64)) {
+      res.status(400).json({ error: "layer_source" });
+      return;
+    }
+    try {
+      let pcm: Buffer;
+      let loop = body.loop === true;
+      let gain = typeof body.gain === "number" ? body.gain : NaN;
+      let engine: "local" | "grok" | "wav" = "wav";
+      if (text) {
+        engine = resolveVoiceEngine(body.voice);
+        const clip = engine === "grok" ? await synthesizeGrokVoice(text) : await synthesizePiper(text);
+        pcm = toVoicePcm(clip);
+        if (!Number.isFinite(gain)) gain = 1;
+      } else {
+        pcm = wavToVoicePcm(Buffer.from(audioBase64, "base64"));
+        loop = body.loop !== false;
+        if (!Number.isFinite(gain)) gain = 0.25;
+        engine = "wav";
+      }
+      mixer.add({ id, pcm, loop, gain: clampGain(gain) });
+      res.status(200).json({ ok: true, engine, ...voiceStreamStatus() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[voice] stream add failed:", msg);
+      const known = new Set([
+        "voice_engine",
+        "wav_format",
+        "audio_too_long",
+        "pcm_format",
+        "grok_voice_not_configured",
+        "piper_format",
+        "piper_empty",
+      ]);
+      const status = msg === "grok_voice_not_configured" ? 503 : known.has(msg) ? 400 : 502;
+      res.status(status).json({ error: known.has(msg) ? msg : "voice_stream_failed" });
     }
   });
 
