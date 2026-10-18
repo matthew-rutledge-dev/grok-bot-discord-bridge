@@ -341,6 +341,22 @@ curl -sS -X POST "http://127.0.0.1:18083/callback" \
   -F "files=@./shot.png;type=image/png"
 ```
 
+## Voice
+
+One bot, one voice channel. Both routes use the callback bearer token. Empty `POST /voice/play` plays a two-second tone. With `text`, Piper speaks it. `voice` of `grok`, `grok-voice-latest`, or `grok-voice-3.0` uses Grok Voice, default Ara. `bed: true` mixes the old two-tone bed under that sentence. The call joins, plays, and leaves.
+
+`POST /voice/stream` holds the channel open and sends silence until a layer is added.
+
+| `op` | Body | Result |
+|------|------|--------|
+| `open` | `channelId` | Join and stay. Opening the same channel again is a no-op. |
+| `add` | `id` plus `text` or `audioBase64` | One layer. `text` is Piper unless `voice` selects Grok. A wav loops unless `loop` is false. Music gain defaults to 0.25. Speech gain defaults to 1. |
+| `remove` | `id` | Drop that layer. The channel stays open. |
+| `close` | | Leave the channel. |
+| `status` | | Open flag, channel, and layers. |
+
+Wav input is 16-bit PCM, up to 30 seconds, converted to 48 kHz stereo. While a stream is open, `POST /voice/play` returns `409 voice_stream_open`. A second voice channel needs a second bot. The bot does not hear other people in the channel.
+
 ## Ports
 
 | Port | Bind | Role |
