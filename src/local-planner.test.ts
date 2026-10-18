@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   PLANNER_START_FAILED_TEXT,
   PLANNER_WORKING_TEXT,
+  workingProgressText,
   forgetPlannerStatus,
   invokeLocalPlanner,
   isGrokBuildRow,
@@ -215,6 +216,8 @@ describe("planner callback targeting", () => {
 describe("planner progress is not a timeout failure", () => {
   it("names the working message and the start-failure edit", () => {
     assert.equal(PLANNER_WORKING_TEXT, "Working on it.");
+    assert.equal(workingProgressText(0), "Working on it. (0s)");
+    assert.equal(workingProgressText(1500), "Working on it. (2s)");
     assert.equal(PLANNER_START_FAILED_TEXT, "Couldn't start that.");
     assert.equal(PLANNER_WORKING_TEXT.includes("⏳"), false);
   });

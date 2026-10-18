@@ -44,6 +44,12 @@ export interface LocalPlannerResult {
 /** Posted in-channel before the planner HTTP call. Not a reaction. */
 export const PLANNER_WORKING_TEXT = "Working on it.";
 
+/** Same message plus elapsed seconds, so a long job does not look stuck. */
+export function workingProgressText(elapsedMs: number): string {
+  const sec = Math.max(0, Math.round(elapsedMs / 1000));
+  return `${PLANNER_WORKING_TEXT} (${sec}s)`;
+}
+
 /** Edited onto the working message when the hop never starts. Not used for timeouts. */
 export const PLANNER_START_FAILED_TEXT = "Couldn't start that.";
 

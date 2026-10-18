@@ -9,8 +9,8 @@ import type { AppConfig } from "./config.js";
 import { sendPromptWithRetry } from "./grok-client.js";
 import {
   PLANNER_START_FAILED_TEXT,
-  PLANNER_WORKING_TEXT,
   cancelGrokBuildHold,
+  workingProgressText,
   forgetPlannerStatus,
   registerGrokBuildHold,
   invokeLocalPlanner,
@@ -234,11 +234,21 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         // Progress is a channel message, not a spinner. The handler returns
         // without waiting for generation. A later callback edits this message.
         let working: Message | undefined;
+        let pulse: ReturnType<typeof setInterval> | undefined;
+        const startedAt = Date.now();
         try {
-          working = await message.reply(PLANNER_WORKING_TEXT);
+          working = await message.reply(workingProgressText(0));
           rememberPlannerStatus(message.id, {
             channelId: message.channelId,
             statusMessageId: working.id,
+          });
+          pulse = setInterval(() => {
+            if (!working) return;
+            void working.edit({ content: workingProgressText(Date.now() - startedAt) }).catch(() => undefined);
+          }, 5_000);
+          pulse.unref?.();
+          registerGrokBuildHold(message.id, () => {
+            if (pulse) clearInterval(pulse);
           });
         } catch (postErr) {
           const postMsg = postErr instanceof Error ? postErr.message : String(postErr);
@@ -276,6 +286,7 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
             console.warn(
               `[local-planner] not started msg=${message.id} status=${local.status} detail=${local.detail ?? ""}`,
             );
+            cancelGrokBuildHold(message.id);
             forgetPlannerStatus(message.id, working?.id);
             if (working) {
               await working.edit({ content: PLANNER_START_FAILED_TEXT }).catch(() => undefined);
@@ -304,7 +315,6 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
       if (isGrokBuildRow(mapRow)) {
         const tGrok = monoMs();
         let posted: Message | undefined;
-        let cancelled = false;
         let pulse: ReturnType<typeof setInterval> | undefined;
         const startedAt = Date.now();
         const typing = setInterval(() => {
@@ -313,40 +323,28 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
             void channel.sendTyping().catch(() => undefined);
           }
         }, 8_000);
+        typing.unref?.();
         if ("sendTyping" in message.channel) {
           void message.channel.sendTyping().catch(() => undefined);
         }
-        const hold = setTimeout(() => {
-          void (async () => {
-            clearInterval(typing);
-            if (cancelled) return;
-            try {
-              posted = await message.reply(PLANNER_WORKING_TEXT);
-              if (cancelled) {
-                await posted.delete().catch(() => undefined);
-                posted = undefined;
-                return;
-              }
-              rememberPlannerStatus(message.id, {
-                channelId: message.channelId,
-                statusMessageId: posted.id,
-              });
-              pulse = setInterval(() => {
-                if (cancelled || !posted) return;
-                const sec = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-                void posted.edit({ content: PLANNER_WORKING_TEXT + " (" + sec + "s)" }).catch(() => undefined);
-              }, 20_000);
-            } catch (postErr) {
-              const postMsg = postErr instanceof Error ? postErr.message : String(postErr);
-              console.warn(
-                `[grok-build] working message failed msg=${message.id} err=${postMsg}`,
-              );
-            }
-          })();
-        }, 15_000);
+        try {
+          posted = await message.reply(workingProgressText(0));
+          rememberPlannerStatus(message.id, {
+            channelId: message.channelId,
+            statusMessageId: posted.id,
+          });
+          pulse = setInterval(() => {
+            if (!posted) return;
+            void posted.edit({ content: workingProgressText(Date.now() - startedAt) }).catch(() => undefined);
+          }, 5_000);
+          pulse.unref?.();
+        } catch (postErr) {
+          const postMsg = postErr instanceof Error ? postErr.message : String(postErr);
+          console.warn(
+            `[grok-build] working message failed msg=${message.id} err=${postMsg}`,
+          );
+        }
         registerGrokBuildHold(message.id, () => {
-          cancelled = true;
-          clearTimeout(hold);
           clearInterval(typing);
           if (pulse) clearInterval(pulse);
         });
