@@ -154,6 +154,8 @@ See [`.env.example`](./.env.example). Notable names:
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
 - `SENDPROMPT_HOLD_MAX_SEC` — how long a sendPrompt hop is held and retried while the tunnel is down (default `900` = 15 min; `0` = no hold, the first tunnel error is final). See [sendPrompt hold](#sendprompt-hold-and-retry-0210).
 - `SENDPROMPT_HOLD_FILE` — JSON backup of held hops (default `./data/sendprompt-hold.json`, which is `/app/data/sendprompt-hold.json` in the image, on the `bridge-data` named volume in Compose). Set it empty for memory only. The file holds the wake prompt text (the user's message) but no tokens; it is written `0600`.
+- `USER_DIRECTORY_FILE` — user directory JSON (default `./data/user-directory.json`, on the same `bridge-data` volume). Empty = memory only. See [User directory](#user-directory-0211).
+- `USER_DIRECTORY_SEED_FILE` — optional read-only seed (default `./config/user-directory.seed.json`; a missing file means no seed).
 
 **Git never gets real secrets** — only `.env.example`. Host `.env` is local.
 
@@ -163,11 +165,12 @@ Prompt shape (unchanged header + thin JSON; optional attachments):
 
 ```
 d:<slug>:<messageId>
-{"id":"d:<slug>:<messageId>","g":"<guildId|null>","u":"<userId>","map":"<alias>","c":"<channelId>","a":[{"url":"...","filename":"...","contentType":"...","size":123}]}
+{"id":"d:<slug>:<messageId>","g":"<guildId|null>","u":"<userId>","un":"<username>","dn":"<displayName>","lb":"<label>","map":"<alias>","c":"<channelId>","a":[{"url":"...","filename":"...","contentType":"...","size":123}]}
 <human text>
 ```
 
 - Text-only wakes omit `a` (same as before).
+- **`un`, `dn`, `lb`** (optional, 0.2.11) are the sender's identity from the [user directory](#user-directory-0211): Discord username, display name (server nickname, else global name, else username), and the operator label from the seed. Each is omitted when unknown, so readers must cope with any of them missing. The same object is on sendPrompt **`metadata.discordUser`** (`{un?,dn?,lb?}`, absent when nothing is known). `u` stays the authority; names are for display only, never for authorization.
 - **`c`** (optional) is the Discord channel snowflake (`message.channelId`) for every inbound, DMs included. Bots can reply with `POST /callback` `channelId=c`; DMs can still use `userId` instead. Readers must treat `c` as optional (older wakes lack it); key order is not guaranteed. The same value is on sendPrompt **`metadata.discordChannelId`**.
 - When the Discord message has attachments, thin JSON includes **`a`**: an array of URL refs (not base64) using Discord CDN `attachment.url` (fallback `proxyURL`), plus optional `filename`, `contentType`, `size`.
 - The same refs are also placed on sendPrompt **`metadata.attachments`**.
@@ -177,6 +180,28 @@ d:<slug>:<messageId>
 ### CDN lifetime caveat
 
 Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** after the wake. Do not store these URLs long-term expecting them to stay valid.
+
+## User directory (0.2.11)
+
+The bridge keeps a small directory of who it is talking to: Discord user id → `{ username, globalName, displayName, label, firstSeen, lastSeen }`.
+
+- **Learned** from every inbound message author (before allow-list checks) and from interaction users. Names are refreshed each time; `firstSeen` never changes.
+- **Stored** in `USER_DIRECTORY_FILE` (default `./data/user-directory.json` on the `bridge-data` volume). Writes are debounced (about 2 s), atomic (temp file + rename) and `0600`. Names and timestamps only: no message text, no tokens.
+- **Seed** (optional, read-only): `USER_DIRECTORY_SEED_FILE`, default `config/user-directory.seed.json`. Merged on startup. A seed `label` always wins; seed `username` / `displayName` only fill gaps, and learned names replace them. The bridge never writes the seed. The real seed is git-ignored, like the roster; copy [`config/user-directory.seed.example.json`](./config/user-directory.seed.example.json) and replace the placeholder ids. The image copies `config/` at build time, so a seed placed there is picked up on the next `docker compose up -d --build`.
+
+Seed format:
+
+```json
+{
+  "version": 1,
+  "users": {
+    "222222222222222222": { "label": "Matthew" },
+    "333333333333333333": { "label": "Kay", "displayName": "Kay" }
+  }
+}
+```
+
+Log line at startup: `[users] directory loaded users=<n> seed=<n>`.
 
 ## sendPrompt hold and retry (0.2.10)
 

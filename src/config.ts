@@ -56,6 +56,10 @@ export interface AppConfig {
   sendPromptHoldMaxSec: number;
   /** JSON backup for held sendPrompt hops. Empty = memory only. */
   sendPromptHoldFile: string;
+  /** User directory JSON (0.2.11). Empty = memory only. */
+  userDirectoryFile: string;
+  /** Optional read-only seed for the user directory. Missing file = no seed. */
+  userDirectorySeedFile: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -117,5 +121,13 @@ export function loadConfig(): AppConfig {
       process.env.SENDPROMPT_HOLD_FILE === undefined
         ? "./data/sendprompt-hold.json"
         : env("SENDPROMPT_HOLD_FILE"),
+    userDirectoryFile:
+      process.env.USER_DIRECTORY_FILE === undefined
+        ? "./data/user-directory.json"
+        : env("USER_DIRECTORY_FILE"),
+    userDirectorySeedFile:
+      process.env.USER_DIRECTORY_SEED_FILE === undefined
+        ? "./config/user-directory.seed.json"
+        : env("USER_DIRECTORY_SEED_FILE"),
   };
 }
