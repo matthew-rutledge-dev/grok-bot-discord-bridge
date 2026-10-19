@@ -29,6 +29,7 @@ import {
   rememberPlannerStatus,
 } from "./local-planner.js";
 import type { ChannelMapRow } from "./types.js";
+import { UserDirectory, type WakeIdentity } from "./user-directory.js";
 import {
   authorizeDm,
   authorizeGuildMessage,
@@ -61,7 +62,10 @@ export function createDiscordClient(): Client {
   });
 }
 
-/** Pure wake prompt: `d:<slug>:<message.id>`, thin JSON `{id,g,u,c?,map,a?}`, human text. */
+/**
+ * Pure wake prompt: `d:<slug>:<message.id>`, thin JSON
+ * `{id,g,u,un?,dn?,lb?,c?,map,a?}`, human text.
+ */
 export function formatWakePrompt(args: {
   slug: string;
   messageId: string;
@@ -72,6 +76,8 @@ export function formatWakePrompt(args: {
   alias: string;
   cleaned: string;
   attachments?: WakeAttachmentRef[];
+  /** Optional sender identity from the user directory (0.2.11). */
+  who?: WakeIdentity;
 }): string {
   const plugId = `d:${args.slug}:${args.messageId}`;
   const thinObj: Record<string, unknown> = {
@@ -80,6 +86,11 @@ export function formatWakePrompt(args: {
     u: args.userId,
     map: args.alias,
   };
+  // Optional identity next to `u`: username, display name, operator label.
+  // Readers must cope with any of them missing.
+  if (args.who?.un) thinObj.un = args.who.un;
+  if (args.who?.dn) thinObj.dn = args.who.dn;
+  if (args.who?.lb) thinObj.lb = args.who.lb;
   // Optional `c`: Discord channel snowflake (DMs too) so replies can target it directly.
   if (args.channelId) thinObj.c = args.channelId;
   if (args.attachments && args.attachments.length > 0) {
@@ -99,7 +110,12 @@ export function formatWakePrompt(args: {
 function buildPrompt(
   message: Message,
   cleaned: string,
-  opts: { slug: string; alias: string; attachments?: WakeAttachmentRef[] },
+  opts: {
+    slug: string;
+    alias: string;
+    attachments?: WakeAttachmentRef[];
+    who?: WakeIdentity;
+  },
 ): string {
   return formatWakePrompt({
     slug: opts.slug,
@@ -111,6 +127,7 @@ function buildPrompt(
     alias: opts.alias,
     cleaned,
     attachments: opts.attachments,
+    who: opts.who,
   });
 }
 
@@ -206,7 +223,15 @@ export function discordHoldUi(
   };
 }
 
-export function wireDiscord(client: Client, cfg: AppConfig): void {
+export function wireDiscord(
+  client: Client,
+  cfg: AppConfig,
+  users: UserDirectory = new UserDirectory({
+    filePath: cfg.userDirectoryFile,
+    seedPath: cfg.userDirectorySeedFile,
+  }),
+): void {
+  users.load();
   const liveMessages = new Map<string, Message>();
   const holdQueue = new SendPromptHoldQueue({
     filePath: cfg.sendPromptHoldFile,
@@ -224,10 +249,30 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
     });
   });
 
+  // Learn who interacts with the bot (no handler today; this only records the user).
+  client.on(Events.InteractionCreate, (interaction) => {
+    if (interaction.user.bot) return;
+    const member = interaction.member;
+    users.learn({
+      id: interaction.user.id,
+      username: interaction.user.username,
+      globalName: interaction.user.globalName,
+      displayName:
+        member && "displayName" in member ? (member.displayName as string) : undefined,
+    });
+  });
+
   client.on(Events.MessageCreate, async (message) => {
     const t0 = monoMs();
     try {
       if (message.author.bot) return;
+      // Every human author, before authz: names and times only, no content.
+      users.learn({
+        id: message.author.id,
+        username: message.author.username,
+        globalName: message.author.globalName,
+        displayName: message.member?.displayName,
+      });
 
       // Owner pairing command in DM or guild: !pair <userId>
       const raw = message.content.trim();
@@ -316,16 +361,19 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
       // Text-only wakes unchanged; attachment-only messages also wake.
       if (!cleaned && attachmentRefs.length === 0) return;
 
+      const who = users.wakeIdentity(message.author.id);
       const prompt = buildPrompt(message, cleaned, {
         slug: wakeSlug,
         alias: wakeAlias,
         attachments: attachmentRefs,
+        who,
       });
       const metadata: Record<string, unknown> = {
         source: "discord-bridge",
         discordMessageId: message.id,
         discordChannelId: message.channelId,
         discordUserId: message.author.id,
+        ...(Object.keys(who).length > 0 ? { discordUser: who } : {}),
         discordGuildId: message.guild?.id ?? null,
         callbackBaseUrl: cfg.callbackBaseUrl,
         callbackPath: cfg.callbackPath,
