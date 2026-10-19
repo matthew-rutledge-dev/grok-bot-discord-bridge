@@ -2,7 +2,7 @@
 
 export const FRAME_SAMPLES = 960;
 export const FRAME_BYTES = FRAME_SAMPLES * 4;
-const MAX_SECONDS = 30;
+const MAX_SECONDS = 180;
 const MAX_BYTES = 48000 * 2 * 2 * MAX_SECONDS;
 
 export type MixLayer = {

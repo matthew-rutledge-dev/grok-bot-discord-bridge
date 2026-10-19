@@ -406,7 +406,7 @@ One bot, one voice channel. Both routes use the callback bearer token. Empty `PO
 | `close` | | Leave the channel. |
 | `status` | | Open flag, channel, and layers. |
 
-Wav input is 16-bit PCM, up to 30 seconds, converted to 48 kHz stereo. While a stream is open, `POST /voice/play` returns `409 voice_stream_open`. A second voice channel needs a second bot. The bot does not hear other people in the channel.
+Wav input is 16-bit PCM, up to 3 minutes, converted to 48 kHz stereo. The JSON body limit is 64mb so a 3-minute 48 kHz stereo wav fits after base64. While a stream is open, `POST /voice/play` returns `409 voice_stream_open`. A second voice channel needs a second bot. The bot does not hear other people in the channel.
 
 ## Ports
 

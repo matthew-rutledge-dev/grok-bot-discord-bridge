@@ -41,7 +41,7 @@ import {
 
 const DISCORD_MAX = 1900;
 /** Prefer multipart for large binaries; JSON base64 path capped ~12 MiB. */
-const JSON_BODY_LIMIT = "12mb";
+const JSON_BODY_LIMIT = "64mb";
 
 function cleanId(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
