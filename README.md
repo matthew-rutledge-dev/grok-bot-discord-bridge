@@ -152,6 +152,8 @@ See [`.env.example`](./.env.example). Notable names:
 - `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN` (store the token in your host vault or secrets manager — never in git)
 - `CALLBACK_RATE_LIMIT_PER_MIN` — soft callback limit (default `90`; `0` = off)
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
+- `SENDPROMPT_HOLD_MAX_SEC` — how long a sendPrompt hop is held and retried while the tunnel is down (default `900` = 15 min; `0` = no hold, the first tunnel error is final). See [sendPrompt hold](#sendprompt-hold-and-retry-0210).
+- `SENDPROMPT_HOLD_FILE` — JSON backup of held hops (default `./data/sendprompt-hold.json`, which is `/app/data/sendprompt-hold.json` in the image, on the `bridge-data` named volume in Compose). Set it empty for memory only. The file holds the wake prompt text (the user's message) but no tokens; it is written `0600`.
 
 **Git never gets real secrets** — only `.env.example`. Host `.env` is local.
 
@@ -175,6 +177,30 @@ d:<slug>:<messageId>
 ### CDN lifetime caveat
 
 Discord CDN / media proxy URLs **expire**. Agents should **fetch promptly** after the wake. Do not store these URLs long-term expecting them to stay valid.
+
+## sendPrompt hold and retry (0.2.10)
+
+When the Grok Bot computer sleeps, its public tunnel edge can answer **HTTP 530 / Cloudflare 1033** until it wakes. Before 0.2.10 the bridge tried 3 times in about 7 s and then put a red X on the message.
+
+Now the bridge makes one immediate sendPrompt call. If that fails with a tunnel or gateway outage, it **holds** the hop:
+
+- **Held:** HTTP `530`, `1033` anywhere in the response body, `502`, `503`, `504`, and network errors (`ECONNRESET`, `ETIMEDOUT`, `fetch failed`).
+- **Fail fast (unchanged):** auth errors, every other 4xx, other 5xx, and the blank-gateway-token refusal. These get the ❌ reaction right away.
+- **Backoff:** retries after 5 s, 10 s, 20 s, then every 30 s, until `SENDPROMPT_HOLD_MAX_SEC` (default 900) runs out. The last try lands on the deadline. Each retry is a real sendPrompt call.
+- **Order:** hops from the same Discord channel stay in order. A later message waits behind an earlier held one, and is sent right after it. Other channels are not blocked.
+- **Discord status:** while held, the bridge replies `Bot is waking up, holding your message…`. On success that status message is deleted and the normal ✅ / ⚠️ reaction follows. When the window runs out (or the bot refuses mid-hold), the status is edited to `❌ Couldn't reach the bot, please try again.` and the message gets ❌.
+- **Restart:** held hops are mirrored to `SENDPROMPT_HOLD_FILE`. On startup (Discord ready) unexpired hops are reloaded and replayed in order; hops whose window ran out while the bridge was down get the red X text.
+
+Caveat: holding only helps if the tunnel comes back inside the window. A computer that stays asleep past `SENDPROMPT_HOLD_MAX_SEC` still ends in the red X.
+
+Log lines:
+
+```
+[sendPrompt] hold start msg=… ch=… hop=… maxSec=900 reason=…
+[sendPrompt] hold retry n=2 msg=… ch=… heldSec=5.0
+[sendPrompt] hold success after 35.0s msg=… ch=… tries=4
+[sendPrompt] hold gave up after 900.0s msg=… ch=… tries=33 reason=window_expired err=…
+```
 
 ## Local planner hop (optional, 0.2.9)
 

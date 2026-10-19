@@ -16,6 +16,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY config ./config
 COPY scripts ./scripts
+# Writable dir for the sendPrompt hold backup (named volume in compose).
+RUN mkdir -p /app/data && chown bridge:bridge /app/data
 USER bridge
 EXPOSE 18083
 CMD ["node", "dist/index.js"]
