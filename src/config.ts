@@ -52,6 +52,10 @@ export interface AppConfig {
   /** Optional. Blank keeps every row on sendPrompt unless a row opts in and then fails closed. */
   localPlannerUrl: string;
   localPlannerToken: string;
+  /** sendPrompt hold window in seconds (default 900). 0 = no hold. */
+  sendPromptHoldMaxSec: number;
+  /** JSON backup for held sendPrompt hops. Empty = memory only. */
+  sendPromptHoldFile: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -104,5 +108,14 @@ export function loadConfig(): AppConfig {
     security,
     localPlannerUrl: env("LOCAL_PLANNER_URL"),
     localPlannerToken: env("LOCAL_PLANNER_TOKEN"),
+    sendPromptHoldMaxSec: (() => {
+      const n = Number(env("SENDPROMPT_HOLD_MAX_SEC", "900"));
+      if (!Number.isFinite(n) || n < 0) return 900;
+      return Math.floor(n);
+    })(),
+    sendPromptHoldFile:
+      process.env.SENDPROMPT_HOLD_FILE === undefined
+        ? "./data/sendprompt-hold.json"
+        : env("SENDPROMPT_HOLD_FILE"),
   };
 }

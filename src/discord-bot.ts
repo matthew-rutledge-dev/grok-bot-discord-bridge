@@ -6,7 +6,14 @@ import {
   type Message,
 } from "discord.js";
 import type { AppConfig } from "./config.js";
-import { sendPromptWithRetry } from "./grok-client.js";
+import { sendPrompt } from "./grok-client.js";
+import {
+  HOLD_GAVE_UP_TEXT,
+  HOLD_STATUS_TEXT,
+  SendPromptHoldQueue,
+  type HeldHop,
+  type HoldUi,
+} from "./sendprompt-hold.js";
 import {
   PLANNER_START_FAILED_TEXT,
   cancelGrokBuildHold,
@@ -107,9 +114,114 @@ function buildPrompt(
   });
 }
 
+async function fetchMessageChannel(client: Client, channelId: string) {
+  const ch = await client.channels.fetch(channelId);
+  if (!ch || !ch.isTextBased() || !("messages" in ch)) {
+    throw new Error(`channel ${channelId} not text`);
+  }
+  return ch;
+}
+
+/**
+ * Discord side of the sendPrompt hold. Uses the live Message when it is still
+ * in memory, otherwise fetches by id (after a restart reload).
+ */
+export function discordHoldUi(
+  client: Client,
+  live: Map<string, Message>,
+): HoldUi {
+  async function original(hop: HeldHop): Promise<Message> {
+    const cached = live.get(hop.messageId);
+    if (cached) return cached;
+    const ch = await fetchMessageChannel(client, hop.channelId);
+    return ch.messages.fetch(hop.messageId);
+  }
+  async function editStatus(hop: HeldHop, content: string): Promise<boolean> {
+    if (!hop.statusMessageId) return false;
+    const ch = await fetchMessageChannel(client, hop.channelId);
+    await ch.messages.edit(hop.statusMessageId, { content });
+    return true;
+  }
+  return {
+    async holding(hop) {
+      if (await editStatus(hop, HOLD_STATUS_TEXT).catch(() => false)) {
+        return hop.statusMessageId;
+      }
+      const msg = await original(hop);
+      const posted = await msg.reply(HOLD_STATUS_TEXT);
+      return posted.id;
+    },
+    async delivered(hop, result, info) {
+      const accepted = Boolean(result.accepted);
+      logTiming({
+        msg: hop.messageId,
+        hop: hop.hop,
+        stage: "sendPrompt",
+        ms: info.elapsedMs,
+        ok: accepted,
+        held: info.held ? true : undefined,
+        tries: hop.tries > 1 ? hop.tries : undefined,
+      });
+      try {
+        if (hop.statusMessageId) {
+          const ch = await fetchMessageChannel(client, hop.channelId);
+          await ch.messages.delete(hop.statusMessageId).catch(() => undefined);
+        }
+        const msg = await original(hop);
+        if (!accepted) {
+          console.warn(`[sendPrompt] not accepted:`, result);
+          await msg.react("⚠️").catch(() => undefined);
+          return;
+        }
+        markSendPromptAccepted(hop.messageId);
+        await msg.react("✅").catch(() => undefined);
+      } finally {
+        live.delete(hop.messageId);
+      }
+    },
+    async failed(hop, _err, info) {
+      logTiming({
+        msg: hop.messageId,
+        hop: hop.hop,
+        stage: "sendPrompt",
+        ms: info.elapsedMs,
+        ok: false,
+        held: info.held ? true : undefined,
+        tries: hop.tries > 1 ? hop.tries : undefined,
+      });
+      try {
+        if (info.held) {
+          const edited = await editStatus(hop, HOLD_GAVE_UP_TEXT).catch(() => false);
+          if (!edited) {
+            const msg = await original(hop);
+            await msg.reply(HOLD_GAVE_UP_TEXT).catch(() => undefined);
+          }
+        }
+        const msg = await original(hop);
+        await msg.react("❌").catch(() => undefined);
+      } finally {
+        live.delete(hop.messageId);
+      }
+    },
+  };
+}
+
 export function wireDiscord(client: Client, cfg: AppConfig): void {
+  const liveMessages = new Map<string, Message>();
+  const holdQueue = new SendPromptHoldQueue({
+    filePath: cfg.sendPromptHoldFile,
+    maxMs: cfg.sendPromptHoldMaxSec * 1000,
+    send: (hop) => sendPrompt(hop.sendUrl, hop.request, cfg.gatewayToken),
+    ui: discordHoldUi(client, liveMessages),
+  });
+
   client.once(Events.ClientReady, (c) => {
     console.log(`[discord] ready as ${c.user.tag}`);
+    void holdQueue.load().catch((err) => {
+      console.warn(
+        `[sendPrompt] hold reload failed err=${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
   });
 
   client.on(Events.MessageCreate, async (message) => {
@@ -408,44 +520,18 @@ export function wireDiscord(client: Client, cfg: AppConfig): void {
         return;
       }
 
-      const tSend = monoMs();
-
-      let accepted = false;
-      try {
-        const result = await sendPromptWithRetry(
-          sendUrl,
-          {
-            agentId,
-            prompt,
-            metadata,
-          },
-          cfg.gatewayToken,
-        );
-        accepted = Boolean(result.accepted);
-        logTiming({
-          msg: message.id,
-          hop,
-          stage: "sendPrompt",
-          ms: elapsedMs(tSend),
-          ok: accepted,
-        });
-        if (!accepted) {
-          console.warn(`[sendPrompt] not accepted:`, result);
-          await message.react("⚠️").catch(() => undefined);
-          return;
-        }
-        markSendPromptAccepted(message.id);
-        await message.react("✅").catch(() => undefined);
-      } catch (sendErr) {
-        logTiming({
-          msg: message.id,
-          hop,
-          stage: "sendPrompt",
-          ms: elapsedMs(tSend),
-          ok: false,
-        });
-        throw sendErr;
-      }
+      // sendPrompt goes through the hold queue: one immediate try, then hold
+      // and retry on tunnel outages (530/1033/502-504/network). Later hops
+      // from the same channel wait behind a held one. Reactions and timing
+      // come from discordHoldUi.
+      liveMessages.set(message.id, message);
+      await holdQueue.submit({
+        messageId: message.id,
+        channelId: message.channelId,
+        hop,
+        sendUrl,
+        request: { agentId, prompt, metadata },
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`[discord] handler error:`, msg);

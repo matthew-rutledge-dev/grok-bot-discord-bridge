@@ -28,8 +28,13 @@ services:
     volumes:
       - ./config/channel-map.json:/app/config/channel-map.json:ro
       - ./config/security.json:/app/config/security.json:ro
+      # sendPrompt hold backup (SENDPROMPT_HOLD_FILE default ./data/… = /app/data/…)
+      - bridge-data:/app/data
     read_only: true
     tmpfs:
       - /tmp
     security_opt:
       - no-new-privileges:true
+
+volumes:
+  bridge-data:
