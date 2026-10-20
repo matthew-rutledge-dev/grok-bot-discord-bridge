@@ -38,7 +38,7 @@ describe("isLocalPlannerRow", () => {
     const opted = {
       primary_llm: "local",
       wake_agent: false,
-      local_handler: "rumble-pixel-planner",
+      local_handler: "local-media-planner",
     };
     assert.equal(isLocalPlannerRow(row({ slug: "ai-gen-images", channelId: "666666666666666666", ...opted })), true);
     assert.equal(isLocalPlannerRow(row({ slug: "ai-gen-video", channelId: "777777777777777777", ...opted })), true);
@@ -48,7 +48,7 @@ describe("isLocalPlannerRow", () => {
     assert.equal(isLocalPlannerRow(row({ primary_llm: "local" })), false);
     assert.equal(isLocalPlannerRow(row({ primary_llm: "local", wake_agent: false })), false);
     assert.equal(
-      isLocalPlannerRow(row({ primary_llm: "local", wake_agent: true, local_handler: "rumble-pixel-planner" })),
+      isLocalPlannerRow(row({ primary_llm: "local", wake_agent: true, local_handler: "local-media-planner" })),
       false,
     );
     assert.equal(
@@ -60,7 +60,7 @@ describe("isLocalPlannerRow", () => {
         enabled: false,
         primary_llm: "local",
         wake_agent: false,
-        local_handler: "rumble-pixel-planner",
+        local_handler: "local-media-planner",
       })),
       false,
     );
@@ -341,7 +341,7 @@ describe("isGrokBuildRow", () => {
     assert.equal(isGrokBuildRow(row({
       primary_llm: "local",
       wake_agent: false,
-      local_handler: "rumble-pixel-planner",
+      local_handler: "local-media-planner",
       harness: "grok-build",
       profile: "example-profile",
     })), false);

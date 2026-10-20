@@ -152,6 +152,36 @@ export function forgetPlannerStatus(
  * Does not invent an agent id; caller still has the row's real agentId and must not use it
  * when this returns true.
  */
+/** Canonical local_handler value for the local media planner. */
+export const LOCAL_MEDIA_PLANNER_HANDLER = "local-media-planner";
+/** Deprecated alias, still accepted and treated identically. */
+export const DEPRECATED_LOCAL_HANDLER_ALIASES: readonly string[] = ["rumble-pixel-planner"];
+
+let warnedDeprecatedHandler = false;
+
+/** Normalize a local_handler value: deprecated aliases map to the canonical name. */
+export function normalizeLocalHandler(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  if (DEPRECATED_LOCAL_HANDLER_ALIASES.includes(v)) {
+    if (!warnedDeprecatedHandler) {
+      warnedDeprecatedHandler = true;
+      console.warn(`[local-planner] local_handler "${v}" is deprecated; use "${LOCAL_MEDIA_PLANNER_HANDLER}".`);
+    }
+    return LOCAL_MEDIA_PLANNER_HANDLER;
+  }
+  return v;
+}
+
+/** True when local_handler names the local media planner (canonical or deprecated alias). */
+export function isLocalMediaPlannerHandler(value: unknown): boolean {
+  return normalizeLocalHandler(value) === LOCAL_MEDIA_PLANNER_HANDLER;
+}
+
+/** Planner log lines worth surfacing. Matches wake_local_planner and the deprecated wake_pixel_edit. */
+export const PLANNER_LOG_LINE_RE =
+  /primary_llm|wake_local_planner|wake_pixel_edit|entrypoint|DryRun|planner phase|calling in help|escalation|unavailable|Comfy/;
+
 export function isLocalPlannerRow(
   row: ChannelMapRow | null | undefined,
 ): boolean {
@@ -159,7 +189,7 @@ export function isLocalPlannerRow(
   return (
     row.primary_llm === "local" &&
     row.wake_agent === false &&
-    row.local_handler === "rumble-pixel-planner"
+    isLocalMediaPlannerHandler(row.local_handler)
   );
 }
 
@@ -170,7 +200,7 @@ export function isGrokBuildRow(
   if (!row?.enabled) return false;
   if (row.primary_llm !== "local" || row.wake_agent !== false) return false;
   if (row.harness !== "grok-build") return false;
-  if (row.local_handler === "rumble-pixel-planner") return false;
+  if (isLocalMediaPlannerHandler(row.local_handler)) return false;
   return typeof row.profile === "string" && row.profile.trim().length > 0;
 }
 

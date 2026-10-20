@@ -2,7 +2,8 @@
 // LOCAL_PLANNER_POWERSHELL stand-in for the Linux bridge container.
 // The bridge spawns this with the same argv it would pass powershell.exe:
 //   -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <ps1> -UserPrompt <text> [-ImagePath <file>]
-// The container cannot see E:\ and the planner host has no sshd, so this forwards to the
+// The container cannot see the planner host's local drives (the ps1 path is passed
+// through unchanged, e.g. C:\path\to\planner.ps1) and the planner host has no sshd, so this forwards to the
 // localhost planner listener (reverse tunnel) which spawns the ps1 as a child.
 const args = process.argv.slice(2);
 function flag(name) {
@@ -38,7 +39,7 @@ let parsed = {};
 try { parsed = JSON.parse(text); } catch { /* ignore */ }
 const blob = String(parsed.stdoutTail || "") + "\n" + String(parsed.stderrTail || "");
 for (const line of blob.split(/\r?\n/)) {
-  if (/primary_llm|wake_pixel_edit|entrypoint|DryRun|planner phase|calling in help|escalation|unavailable|Comfy/.test(line)) {
+  if (/primary_llm|wake_local_planner|wake_pixel_edit|entrypoint|DryRun|planner phase|calling in help|escalation|unavailable|Comfy/.test(line)) {
     console.log(line.slice(0, 240));
   }
 }

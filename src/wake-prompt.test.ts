@@ -9,7 +9,7 @@ const base = {
   channelId: "222",
   userId: "333",
   userTag: "bob",
-  alias: "Milim_kay",
+  alias: "example-agent-3",
   cleaned: "hi",
 };
 
@@ -17,7 +17,7 @@ describe("formatWakePrompt", () => {
   it("adds channel snowflake c for DMs", () => {
     const [id, thin, text] = formatWakePrompt(base).split("\n");
     assert.equal(id, "d:dm:111");
-    assert.deepEqual(JSON.parse(thin), { id: "d:dm:111", g: null, u: "333", map: "Milim_kay", c: "222" });
+    assert.deepEqual(JSON.parse(thin), { id: "d:dm:111", g: null, u: "333", map: "example-agent-3", c: "222" });
     assert.equal(text, "hi");
   });
   it("keeps the old fields and a for guild messages", () => {

@@ -6,7 +6,7 @@ import { authorizeDm, dmRecipientAllowed, isHostAdmin } from "./security.js";
 import type { SecurityFile } from "./types.js";
 
 const owner = "222222222222222222";
-const linda = "333333333333333333";
+const carol = "333333333333333333";
 const bob = "444444444444444444";
 
 function cfg(security: SecurityFile): AppConfig {
@@ -28,16 +28,16 @@ const security: SecurityFile = {
   guilds: {},
   dm: {
     policy: "allowlist",
-    allowFrom: [owner, linda],
+    allowFrom: [owner, carol],
     defaultAgentId: "example-agent",
     agentsByUser: {
-      [linda]: { agentId: "hinata-example", alias: "Hinata_desktop" },
+      [carol]: { agentId: "example-agent-2", alias: "example-agent-2" },
     },
   },
   hostAdmins: {
     "example-host-a": [owner],
     "example-host-b": [owner],
-    "example-host-c": [owner, linda],
+    "example-host-c": [owner, carol],
   },
 };
 
@@ -52,10 +52,10 @@ describe("authorizeDm", () => {
   });
 
   it("uses the per-person agent when one is set", () => {
-    const result = authorizeDm(app, user(linda));
+    const result = authorizeDm(app, user(carol));
     assert.equal(result.ok, true);
-    assert.equal(result.agentId, "hinata-example");
-    assert.equal(result.alias, "Hinata_desktop");
+    assert.equal(result.agentId, "example-agent-2");
+    assert.equal(result.alias, "example-agent-2");
   });
 
   it("denies a person who is not on the DM allow list", () => {
@@ -70,7 +70,7 @@ describe("dmRecipientAllowed", () => {
 
   it("allows listed people and rejects everyone else", () => {
     assert.equal(dmRecipientAllowed(app, owner), true);
-    assert.equal(dmRecipientAllowed(app, linda), true);
+    assert.equal(dmRecipientAllowed(app, carol), true);
     assert.equal(dmRecipientAllowed(app, bob), false);
   });
 });
@@ -82,8 +82,8 @@ describe("isHostAdmin", () => {
     assert.equal(isHostAdmin(app, "example-host-a", owner), true);
     assert.equal(isHostAdmin(app, "example-host-b", owner), true);
     assert.equal(isHostAdmin(app, "example-host-c", owner), true);
-    assert.equal(isHostAdmin(app, "example-host-c", linda), true);
-    assert.equal(isHostAdmin(app, "example-host-a", linda), false);
+    assert.equal(isHostAdmin(app, "example-host-c", carol), true);
+    assert.equal(isHostAdmin(app, "example-host-a", carol), false);
     assert.equal(isHostAdmin(app, "example-host-a", bob), false);
     assert.equal(isHostAdmin(app, "example-host-c", bob), false);
   });
