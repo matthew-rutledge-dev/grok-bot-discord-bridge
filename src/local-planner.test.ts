@@ -40,8 +40,8 @@ describe("isLocalPlannerRow", () => {
       wake_agent: false,
       local_handler: "rumble-pixel-planner",
     };
-    assert.equal(isLocalPlannerRow(row({ slug: "ai-gen-images", channelId: "1509249238419378176", ...opted })), true);
-    assert.equal(isLocalPlannerRow(row({ slug: "ai-gen-video", channelId: "1509249242990903386", ...opted })), true);
+    assert.equal(isLocalPlannerRow(row({ slug: "ai-gen-images", channelId: "666666666666666666", ...opted })), true);
+    assert.equal(isLocalPlannerRow(row({ slug: "ai-gen-video", channelId: "777777777777777777", ...opted })), true);
   });
 
   it("does not treat partial or lookalike config as local", () => {
@@ -168,7 +168,7 @@ describe("planner callback targeting", () => {
       seenAuth = headers.authorization;
       return new Response(JSON.stringify({ ok: true, exitCode: 0 }), { status: 200 });
     };
-    const messageId = "1509249238419378176";
+    const messageId = "666666666666666666";
     const callbackUrl = "http://127.0.0.1:18083/callback";
     const imageFields = plannerImageFields([
       { url: "https://cdn.example/a.png" },
@@ -235,7 +235,7 @@ describe("planner progress is not a timeout failure", () => {
         imagePath: "",
         channelId: "42",
         slug: "ai-gen-images",
-        messageId: "1555776603705835603",
+        messageId: "555555555555555555",
         callbackUrl: "http://127.0.0.1:18083/callback",
         statusMessageId: "9001",
         dryRun: false,
@@ -262,7 +262,7 @@ describe("planner progress is not a timeout failure", () => {
         imagePath: "",
         channelId: "42",
         slug: "ai-gen-images",
-        messageId: "1555776603705835603",
+        messageId: "555555555555555555",
         callbackUrl: "http://127.0.0.1:18083/callback",
         dryRun: false,
       },
@@ -289,7 +289,7 @@ describe("planner progress is not a timeout failure", () => {
         imagePath: "",
         channelId: "42",
         slug: "ai-gen-images",
-        messageId: "1555776603705835603",
+        messageId: "555555555555555555",
         callbackUrl: "http://127.0.0.1:18083/callback",
         statusMessageId: "9001",
         dryRun: false,
@@ -299,11 +299,11 @@ describe("planner progress is not a timeout failure", () => {
     assert.equal(result.ok, true);
     assert.equal(plannerUserSignal(result), "accepted");
     const parsed = new URL(seenUrl);
-    assert.equal(parsed.searchParams.get("messageId"), "1555776603705835603");
+    assert.equal(parsed.searchParams.get("messageId"), "555555555555555555");
     assert.equal(parsed.searchParams.get("statusMessageId"), "9001");
     assert.equal(parsed.searchParams.get("token"), null);
     const posted = JSON.parse(seenBody) as { messageId: string; statusMessageId: string; callbackUrl: string };
-    assert.equal(posted.messageId, "1555776603705835603");
+    assert.equal(posted.messageId, "555555555555555555");
     assert.equal(posted.statusMessageId, "9001");
     assert.equal(posted.callbackUrl, "http://127.0.0.1:18083/callback");
     assert.equal(seenBody.includes("planner-token"), false);
@@ -318,11 +318,11 @@ describe("planner progress is not a timeout failure", () => {
   });
 
   it("remembers a working message by the inbound Discord message id", () => {
-    forgetPlannerStatus("1555776603705835603", "9001");
-    rememberPlannerStatus("1555776603705835603", { channelId: "42", statusMessageId: "9001" });
-    assert.equal(lookupPlannerStatus("1555776603705835603")?.statusMessageId, "9001");
+    forgetPlannerStatus("555555555555555555", "9001");
+    rememberPlannerStatus("555555555555555555", { channelId: "42", statusMessageId: "9001" });
+    assert.equal(lookupPlannerStatus("555555555555555555")?.statusMessageId, "9001");
     forgetPlannerStatus(undefined, "9001");
-    assert.equal(lookupPlannerStatus("1555776603705835603"), undefined);
+    assert.equal(lookupPlannerStatus("555555555555555555"), undefined);
   });
 });
 

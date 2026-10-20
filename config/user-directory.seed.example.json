@@ -2,7 +2,7 @@
   "version": 1,
   "description": "Optional, read-only. Copy to config/user-directory.seed.json and replace the placeholder ids. Labels here always win; names are learned from Discord.",
   "users": {
-    "222222222222222222": { "label": "Matthew" },
-    "333333333333333333": { "label": "Kay" }
+    "222222222222222222": { "label": "Alice" },
+    "333333333333333333": { "label": "Bob" }
   }
 }

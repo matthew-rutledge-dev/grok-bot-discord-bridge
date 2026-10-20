@@ -198,8 +198,8 @@ Seed format:
 {
   "version": 1,
   "users": {
-    "222222222222222222": { "label": "Matthew" },
-    "333333333333333333": { "label": "Kay", "displayName": "Kay" }
+    "222222222222222222": { "label": "Alice" },
+    "333333333333333333": { "label": "Bob", "displayName": "Bob" }
   }
 }
 ```

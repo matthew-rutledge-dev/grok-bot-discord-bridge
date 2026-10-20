@@ -6,7 +6,7 @@ export interface LocalPlannerRequest {
   imagePath: string;
   /**
    * Discord attachment[1] CDN URL (optional reference). Empty when absent.
-   * Pixel listener: referenceImagePath / reference_image_path / imagePaths[1].
+   * Local planner listener: referenceImagePath / reference_image_path / imagePaths[1].
    */
   referenceImagePath?: string;
   /**
@@ -176,9 +176,9 @@ export function isGrokBuildRow(
 
 
 /**
- * Map Discord wake attachment refs to Pixel local-planner body fields.
+ * Map Discord wake attachment refs to local-planner body fields.
  * a[0] = base (imagePath), a[1] = optional reference (referenceImagePath).
- * a[2+] ignored. Matches rumble STATUS / Start-DiscordPlannerListener.ps1.
+ * a[2+] ignored. Matches the planner listener contract.
  */
 export function plannerImageFields(
   attachmentRefs: ReadonlyArray<{ url: string }>,

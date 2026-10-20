@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""TCP proxy: docker-bridge gateway:18771 -> 127.0.0.1:18771 (rumble reverse tunnel)."""
+"""TCP proxy: docker-bridge gateway:18771 -> 127.0.0.1:18771 (planner-host reverse tunnel)."""
 import socket
 import subprocess
 import threading

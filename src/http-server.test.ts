@@ -270,14 +270,14 @@ describe("POST /callback edits a planner working message", () => {
     sends.length = 0;
     failEdit = false;
     const { rememberPlannerStatus, lookupPlannerStatus } = await import("./local-planner.js");
-    rememberPlannerStatus("1555776603705835603", {
+    rememberPlannerStatus("555555555555555555", {
       channelId: "42",
       statusMessageId: "9001",
     });
     const res = await post({
       channelId: "42",
       content: "",
-      replyToMessageId: "1555776603705835603",
+      replyToMessageId: "555555555555555555",
       attachments: [{ filename: "1x1.png", contentType: "image/png", data: png }],
     });
     assert.equal(res.status, 200);
@@ -290,7 +290,7 @@ describe("POST /callback edits a planner working message", () => {
     assert.equal(edits[0].payload.content, "");
     assert.equal(edits[0].payload.files?.length, 1);
     assert.equal(sends.length, 0);
-    assert.equal(lookupPlannerStatus("1555776603705835603"), undefined);
+    assert.equal(lookupPlannerStatus("555555555555555555"), undefined);
   });
 
   it("edits statusMessageId from the callback body", async () => {
@@ -300,7 +300,7 @@ describe("POST /callback edits a planner working message", () => {
     const res = await post({
       channelId: "42",
       content: "Couldn't finish that.",
-      replyToMessageId: "1555776603705835603",
+      replyToMessageId: "555555555555555555",
       statusMessageId: "9002",
     });
     assert.equal(res.status, 200);
