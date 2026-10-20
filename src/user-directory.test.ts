@@ -7,8 +7,8 @@ import { formatWakePrompt } from "./discord-bot.js";
 import { UserDirectory } from "./user-directory.js";
 
 const quiet = { info: () => undefined, warn: () => undefined };
-const MATT = "222222222222222222";
-const KAY = "333333333333333333";
+const ALICE = "222222222222222222";
+const BOB = "333333333333333333";
 
 let dir: string;
 let clock: Date;
@@ -28,30 +28,30 @@ describe("UserDirectory learning", () => {
   it("records a new author and refreshes lastSeen and names", () => {
     const d = dirAt("");
     d.load();
-    d.learn({ id: MATT, username: "kittenclubber", globalName: "Matt" });
-    assert.deepEqual(d.get(MATT), {
-      username: "kittenclubber",
-      globalName: "Matt",
-      displayName: "Matt",
+    d.learn({ id: ALICE, username: "example-user", globalName: "Ali" });
+    assert.deepEqual(d.get(ALICE), {
+      username: "example-user",
+      globalName: "Ali",
+      displayName: "Ali",
       label: undefined,
       firstSeen: "2026-10-19T18:00:00.000Z",
       lastSeen: "2026-10-19T18:00:00.000Z",
     });
     clock = new Date("2026-10-19T19:00:00.000Z");
-    d.learn({ id: MATT, username: "kittenclubber", globalName: null, displayName: "Matt (server)" });
-    const e = d.get(MATT)!;
+    d.learn({ id: ALICE, username: "example-user", globalName: null, displayName: "Alice (server)" });
+    const e = d.get(ALICE)!;
     assert.equal(e.firstSeen, "2026-10-19T18:00:00.000Z");
     assert.equal(e.lastSeen, "2026-10-19T19:00:00.000Z");
-    assert.equal(e.globalName, "Matt");
-    assert.equal(e.displayName, "Matt (server)");
+    assert.equal(e.globalName, "Ali");
+    assert.equal(e.displayName, "Alice (server)");
   });
 
   it("ignores non-snowflake ids and strips control characters", () => {
     const d = dirAt("");
     assert.equal(d.learn({ id: "abc", username: "x" }), undefined);
-    d.learn({ id: KAY, username: "kay\nline", globalName: "  Kay  " });
-    assert.equal(d.get(KAY)!.username, "kay line");
-    assert.equal(d.get(KAY)!.displayName, "Kay");
+    d.learn({ id: BOB, username: "bob\nline", globalName: "  Bob  " });
+    assert.equal(d.get(BOB)!.username, "bob line");
+    assert.equal(d.get(BOB)!.displayName, "Bob");
   });
 });
 
@@ -59,20 +59,20 @@ describe("UserDirectory seed merge", () => {
   it("seed labels win over saved labels; learned names stay", () => {
     const file = join(dir, "users.json");
     const seed = join(dir, "seed.json");
-    writeFileSync(file, JSON.stringify({ version: 1, users: { [MATT]: { username: "kittenclubber", label: "old", firstSeen: "2026-10-01T00:00:00.000Z" } } }));
-    writeFileSync(seed, JSON.stringify({ version: 1, users: { [MATT]: { label: "Matthew", username: "seedname" }, [KAY]: { label: "Kay" }, bad: { label: "x" } } }));
+    writeFileSync(file, JSON.stringify({ version: 1, users: { [ALICE]: { username: "example-user", label: "old", firstSeen: "2026-10-01T00:00:00.000Z" } } }));
+    writeFileSync(seed, JSON.stringify({ version: 1, users: { [ALICE]: { label: "Alice", username: "seedname" }, [BOB]: { label: "Bob" }, bad: { label: "x" } } }));
     const d = dirAt(file, seed);
     d.load();
-    assert.equal(d.get(MATT)!.label, "Matthew");
-    assert.equal(d.get(MATT)!.username, "kittenclubber");
-    assert.equal(d.get(MATT)!.firstSeen, "2026-10-01T00:00:00.000Z");
-    assert.equal(d.get(KAY)!.label, "Kay");
-    assert.equal(d.get(KAY)!.lastSeen, undefined);
+    assert.equal(d.get(ALICE)!.label, "Alice");
+    assert.equal(d.get(ALICE)!.username, "example-user");
+    assert.equal(d.get(ALICE)!.firstSeen, "2026-10-01T00:00:00.000Z");
+    assert.equal(d.get(BOB)!.label, "Bob");
+    assert.equal(d.get(BOB)!.lastSeen, undefined);
     assert.equal(d.get("bad"), undefined);
     // Learning does not overwrite the seed label.
-    d.learn({ id: KAY, username: "kay_d", globalName: "Kay D" });
-    assert.equal(d.get(KAY)!.label, "Kay");
-    assert.deepEqual(d.wakeIdentity(KAY), { un: "kay_d", dn: "Kay D", lb: "Kay" });
+    d.learn({ id: BOB, username: "bob_b", globalName: "Bob B" });
+    assert.equal(d.get(BOB)!.label, "Bob");
+    assert.deepEqual(d.wakeIdentity(BOB), { un: "bob_b", dn: "Bob B", lb: "Bob" });
     // The seed file is never written.
     assert.match(readFileSync(seed, "utf8"), /seedname/);
   });
@@ -89,31 +89,31 @@ describe("UserDirectory persistence", () => {
     const file = join(dir, "sub", "users.json");
     const a = dirAt(file);
     a.load();
-    a.learn({ id: MATT, username: "kittenclubber", globalName: "Matt" });
+    a.learn({ id: ALICE, username: "example-user", globalName: "Ali" });
     const raw = readFileSync(file, "utf8");
     assert.equal(statSync(file).mode & 0o777, 0o600);
     assert.doesNotMatch(raw, /content|token/i);
     const b = dirAt(file);
     b.load();
-    assert.deepEqual(b.get(MATT), a.get(MATT));
+    assert.deepEqual(b.get(ALICE), a.get(ALICE));
   });
 
   it("debounces writes and flush() writes pending changes", () => {
     const file = join(dir, "users.json");
     const d = new UserDirectory({ filePath: file, writeDelayMs: 60_000, now, log: quiet });
     d.load();
-    d.learn({ id: MATT, username: "kittenclubber" });
+    d.learn({ id: ALICE, username: "example-user" });
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).users, {});
     d.flush();
-    assert.equal(JSON.parse(readFileSync(file, "utf8")).users[MATT].username, "kittenclubber");
+    assert.equal(JSON.parse(readFileSync(file, "utf8")).users[ALICE].username, "example-user");
   });
 
   it("memory only when the path is empty", () => {
     const d = dirAt("");
     d.load();
-    d.learn({ id: MATT, username: "m" });
+    d.learn({ id: ALICE, username: "m" });
     d.flush();
-    assert.equal(d.get(MATT)!.username, "m");
+    assert.equal(d.get(ALICE)!.username, "m");
   });
 });
 
@@ -123,22 +123,22 @@ describe("wake prompt identity", () => {
     messageId: "111",
     guildId: null,
     channelId: "222",
-    userId: MATT,
-    userTag: "kittenclubber",
-    alias: "Rimuru_orch",
+    userId: ALICE,
+    userTag: "example-user",
+    alias: "example-agent",
     cleaned: "hi",
   };
 
   it("adds un, dn, lb next to u", () => {
-    const thin = JSON.parse(formatWakePrompt({ ...base, who: { un: "kittenclubber", dn: "Matt", lb: "Matthew" } }).split("\n")[1]);
-    assert.deepEqual(thin, { id: "d:dm:111", g: null, u: MATT, un: "kittenclubber", dn: "Matt", lb: "Matthew", map: "Rimuru_orch", c: "222" });
+    const thin = JSON.parse(formatWakePrompt({ ...base, who: { un: "example-user", dn: "Ali", lb: "Alice" } }).split("\n")[1]);
+    assert.deepEqual(thin, { id: "d:dm:111", g: null, u: ALICE, un: "example-user", dn: "Ali", lb: "Alice", map: "example-agent", c: "222" });
   });
 
   it("omits identity fields that are unknown (backward compatible)", () => {
     const plain = JSON.parse(formatWakePrompt(base).split("\n")[1]);
     assert.deepEqual(Object.keys(plain).sort(), ["c", "g", "id", "map", "u"]);
-    const partial = JSON.parse(formatWakePrompt({ ...base, who: { un: "kittenclubber" } }).split("\n")[1]);
-    assert.equal(partial.un, "kittenclubber");
+    const partial = JSON.parse(formatWakePrompt({ ...base, who: { un: "example-user" } }).split("\n")[1]);
+    assert.equal(partial.un, "example-user");
     assert.equal("dn" in partial, false);
     assert.equal("lb" in partial, false);
   });

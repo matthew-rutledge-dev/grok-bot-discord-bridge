@@ -2,7 +2,7 @@
 // LOCAL_PLANNER_POWERSHELL stand-in for the Linux bridge container.
 // The bridge spawns this with the same argv it would pass powershell.exe:
 //   -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <ps1> -UserPrompt <text> [-ImagePath <file>]
-// The container cannot see E:\ and rumble has no sshd, so this forwards to the
+// The container cannot see E:\ and the planner host has no sshd, so this forwards to the
 // localhost planner listener (reverse tunnel) which spawns the ps1 as a child.
 const args = process.argv.slice(2);
 function flag(name) {

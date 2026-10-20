@@ -15,13 +15,13 @@ export const DEFAULT_USER_DIRECTORY_SEED_FILE = "./config/user-directory.seed.js
 const MAX_NAME = 64;
 
 export interface UserEntry {
-  /** Discord username (unique handle, e.g. "kittenclubber"). */
+  /** Discord username (unique handle, e.g. "example-user"). */
   username?: string;
   /** Discord global display name, when set. */
   globalName?: string;
   /** Best display name last seen: guild nickname, else global name, else username. */
   displayName?: string;
-  /** Operator label from the seed (e.g. "Matthew"). Seed always wins. */
+  /** Operator label from the seed (e.g. "Alice"). Seed always wins. */
   label?: string;
   /** ISO time first seen (or seeded). */
   firstSeen: string;
