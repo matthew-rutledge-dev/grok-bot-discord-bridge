@@ -4,6 +4,18 @@ Thin **Discord Gateway → Grok Bot `sendPrompt` → Discord callback** bridge.
 
 Self-hosted wake path for Discord → your Grok Bot agents. Configure **your own** Discord bot, guild allowlists, and deploy path. This repo ships example configs with placeholders only — never commit real tokens or live snowflakes.
 
+## Quickstart
+
+1. **Discord app and bot.** Create your own Discord application with a bot user, invite it to your server, and put its token in `DISCORD_BOT_TOKEN`.
+2. **`.env`.** Copy `.env.example` to `.env`. Set `GROK_BOT_SENDPROMPT_URL` and `GROK_BOT_GATEWAY_TOKEN` (the bearer your Grok Bot sendPrompt endpoint accepts; the bridge refuses to wake without it) and `CALLBACK_TOKEN`. A cloud Grok Bot computer needs its **public tunnel URL** here, not `host.docker.internal`.
+3. **`config/security.json` and `config/channel-map.json`.** Copy the examples and replace every placeholder snowflake with your guild, channel and user IDs. Each enabled channel-map row needs the `agentId` of the Grok Bot to wake: use that bot's own agent id from your Grok Bot account.
+4. **Start it.** `docker compose up -d` (re-run it after `.env` changes; `restart` does not re-read `env_file`).
+5. **Check health.** `curl -sS http://127.0.0.1:18083/healthz` should show `discordReady: true`.
+6. **Callbacks.** Give your Grok Bots the bridge `POST /callback` URL and `CALLBACK_TOKEN` so replies land in Discord. See [Callback contract](#callback-contract-outbound).
+7. **Wake hook (recommended).** Set `SENDPROMPT_WAKE_URL` / `SENDPROMPT_WAKE_KEY` and `SENDPROMPT_HOLD_MAX_SEC=1800` so messages survive a sleeping Grok Bot computer. See [sendPrompt wake hook](#sendprompt-wake-hook-strongly-recommended-0212).
+
+See [Troubleshooting](#troubleshooting) if something does not answer.
+
 ## Which piece you need
 
 | Need | Where it lives |
@@ -147,15 +159,15 @@ See [`.env.example`](./.env.example). Notable names:
 
 - `DISCORD_BOT_TOKEN` — required for Gateway login
 - `DISCORD_GUILD_ID`, `DISCORD_ALLOWFROM`, `DISCORD_ALLOW_ROLES`, `DISCORD_ALLOW_CHANNELS`, `DISCORD_OWNER_ID`, `DISCORD_DM_POLICY`
-- `GROK_BOT_SENDPROMPT_URL` — default `http://host.docker.internal:1340/api/sendPrompt` on Docker hosts that support it (or use LAN IP of the Grok Bot computer)
+- `GROK_BOT_SENDPROMPT_URL` — default `http://host.docker.internal:1340/api/sendPrompt` when the Grok Bot app runs on the same Docker host (or its LAN IP). A **cloud Grok Bot computer** needs its public tunnel URL (e.g. `https://example.com/api/sendPrompt`); `host.docker.internal` will not reach it.
 - `GROK_BOT_GATEWAY_TOKEN` — **required** Bearer for outbound sendPrompt (fail-closed: blank/unset refuses wakes; no unauthenticated POST)
 - `CALLBACK_BASE_URL`, `CALLBACK_PATH`, `CALLBACK_TOKEN` (store the token in your host vault or secrets manager — never in git)
 - `CALLBACK_RATE_LIMIT_PER_MIN` — soft callback limit (default `90`; `0` = off)
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
 - `SENDPROMPT_HOLD_MAX_SEC` — how long a sendPrompt hop is held and retried while the tunnel is down (default `900` = 15 min; `0` = no hold, the first tunnel error is final). See [sendPrompt hold](#sendprompt-hold-and-retry-0210).
 - `SENDPROMPT_HOLD_FILE` — JSON backup of held hops (default `./data/sendprompt-hold.json`, which is `/app/data/sendprompt-hold.json` in the image, on the `bridge-data` named volume in Compose). Set it empty for memory only. The file holds the wake prompt text (the user's message) but no tokens; it is written `0600`.
-- `SENDPROMPT_WAKE_URL` — optional wake hook (0.2.12). Blank (default) = off. When set, the bridge POSTs once per outage to this URL while a hop is held. See [sendPrompt wake hook](#sendprompt-wake-hook-optional-0212). Treat the URL as a secret if it carries one in its path; the bridge only ever logs its host.
-- `SENDPROMPT_WAKE_KEY` — optional key for the wake hook (default blank = no auth header). Store it in your vault, never in git. Never logged.
+- `SENDPROMPT_WAKE_URL` — strongly recommended wake hook (0.2.12). Blank (default) = off. When set, the bridge POSTs once per outage to this URL while a hop is held. See [sendPrompt wake hook](#sendprompt-wake-hook-strongly-recommended-0212). Treat the URL as a secret if it carries one in its path; the bridge only ever logs its host.
+- `SENDPROMPT_WAKE_KEY` — key for the (strongly recommended) wake hook (default blank = no auth header). Store it in your vault, never in git. Never logged.
 - `SENDPROMPT_WAKE_HEADER` — header that carries the key (default `Authorization`, sent as `Authorization: Bearer <key>`). Any other header name sends the raw key, e.g. `X-Webhook-Key: <key>`.
 - `USER_DIRECTORY_FILE` — user directory JSON (default `./data/user-directory.json`, on the same `bridge-data` volume). Empty = memory only. See [User directory](#user-directory-0211).
 - `USER_DIRECTORY_SEED_FILE` — optional read-only seed (default `./config/user-directory.seed.json`; a missing file means no seed).
@@ -219,7 +231,7 @@ Now the bridge makes one immediate sendPrompt call. If that fails with a tunnel 
 - **Discord status:** while held, the bridge replies `Bot is waking up, holding your message…`. On success that status message is deleted and the normal ✅ / ⚠️ reaction follows. When the window runs out (or the bot refuses mid-hold), the status is edited to `❌ Couldn't reach the bot, please try again.` and the message gets ❌.
 - **Restart:** held hops are mirrored to `SENDPROMPT_HOLD_FILE`. On startup (Discord ready) unexpired hops are reloaded and replayed in order; hops whose window ran out while the bridge was down get the red X text.
 
-Caveat: holding only helps if the tunnel comes back inside the window. A computer that stays asleep past `SENDPROMPT_HOLD_MAX_SEC` still ends in the red X, unless the optional [wake hook](#sendprompt-wake-hook-optional-0212) gets it awake in time.
+Caveat: holding only helps if the tunnel comes back inside the window. A computer that stays asleep past `SENDPROMPT_HOLD_MAX_SEC` still ends in the red X, unless the strongly recommended [wake hook](#sendprompt-wake-hook-strongly-recommended-0212) gets it awake in time.
 
 Log lines:
 
@@ -230,11 +242,13 @@ Log lines:
 [sendPrompt] hold gave up after 900.0s msg=… ch=… tries=33 reason=window_expired err=…
 ```
 
-## sendPrompt wake hook (optional, 0.2.12)
+## sendPrompt wake hook (strongly recommended, 0.2.12)
 
-A Grok Bot computer can hibernate for hours (for example 9:09 PM to 8:06 AM). The hold above gives up after `SENDPROMPT_HOLD_MAX_SEC`, so the message still gets the red X. The wake hook lets the bridge ask something else to wake that computer while the hop is still held.
+> **Strongly recommended.** Grok Bot computers sleep when idle. The hold (`SENDPROMPT_HOLD_MAX_SEC`) alone only covers short sleeps; the wake hook is what makes long sleeps recoverable.
 
-Off by default. Set `SENDPROMPT_WAKE_URL` (and usually `SENDPROMPT_WAKE_KEY`) to turn it on. One wake URL per Grok Bot account is enough: all of that account's bots share one computer.
+A Grok Bot computer can hibernate for hours (for example overnight). The hold above gives up after `SENDPROMPT_HOLD_MAX_SEC`, so the message still gets the red X. The wake hook lets the bridge ask something else to wake that computer while the hop is still held.
+
+**Recommended for every install.** Off by default. Set `SENDPROMPT_WAKE_URL` (and usually `SENDPROMPT_WAKE_KEY`) to turn it on. One wake URL per Grok Bot account is enough: all of that account's bots share one computer.
 
 - **When:** a hop is held on a retryable tunnel error (the same list as the hold: `530`, `1033`, `502`, `503`, `504`, network errors). Auth errors, other 4xx, other 5xx, and a `0` hold window never fire it.
 - **How often:** at most **one POST per outage**, across all channels. It re-arms after the next successful sendPrompt, or once no hop is held any more (every held hop gave up), so the next outage can fire it again. A failed wake POST is not retried in the same outage.
@@ -255,7 +269,7 @@ Off by default. Set `SENDPROMPT_WAKE_URL` (and usually `SENDPROMPT_WAKE_KEY`) to
 | `Authorization` (default) | `Authorization: Bearer <SENDPROMPT_WAKE_KEY>` |
 | any other name, e.g. `X-Webhook-Key` | `X-Webhook-Key: <SENDPROMPT_WAKE_KEY>` (raw key) |
 
-Blank `SENDPROMPT_WAKE_KEY` sends no auth header (a warning is logged at startup). The exact header shape the Grok Bot routine webhook expects is **pending confirmation**; bearer is the default until then, and switching to a raw custom header is a `.env` change only.
+Blank `SENDPROMPT_WAKE_KEY` sends no auth header (a warning is logged at startup). The bearer default is **verified** against the Grok Bot routine webhook: a good wake returns `200 {"success":true,"runUuid":"..."}`. Switching to a raw custom header is a `.env` change only.
 
 ### Hold window with a wake hook
 
@@ -287,7 +301,9 @@ A row opts into the local planner only when all three are set:
 
 - `primary_llm`: `"local"`
 - `wake_agent`: `false`
-- `local_handler`: `"rumble-pixel-planner"`
+- `local_handler`: `"local-media-planner"`
+
+Older handler and log-pattern names are still accepted as deprecated aliases.
 
 Those rows do **not** call `sendPrompt`. The bridge posts a short message in the same channel, `Working on it.`, then POSTs this JSON to `LOCAL_PLANNER_URL` with `Authorization: Bearer <LOCAL_PLANNER_TOKEN>` (planner auth only; this is not the callback token):
 
@@ -485,6 +501,13 @@ npm run build
 cp .env.example .env
 HTTP_ONLY=1 HTTP_BIND=127.0.0.1 npm start   # HTTP only, no Discord
 ```
+
+## Troubleshooting
+
+- **Wake hook returns 401.** The key is wrong or in the wrong header. With the default `SENDPROMPT_WAKE_HEADER=Authorization` the bridge sends `Authorization: Bearer <key>`. Check `SENDPROMPT_WAKE_KEY` against the routine's key, then `docker compose up -d`.
+- **Wake hook returns 404.** The URL is wrong or the routine/webhook was deleted. Copy the routine webhook URL again into `SENDPROMPT_WAKE_URL`.
+- **Wake returns 200 but the routine never runs.** A good wake returns `200 {"success":true,"runUuid":"..."}`. If you get that and nothing happens, check the routine itself in your Grok Bot account (enabled, and that it does something that wakes the computer). If the bridge log never shows a wake POST, the hop was not held on a retryable tunnel error, or the hook already fired this outage (it re-arms after the next success).
+- **`/healthz` shows `discordReady: false`.** The bot is not logged in to Discord: check `DISCORD_BOT_TOKEN`, that the bot is invited to the guild, and the container logs. After editing `.env`, use `docker compose up -d`, not `restart`.
 
 ## License
 
