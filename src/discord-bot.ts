@@ -14,6 +14,7 @@ import {
   type HeldHop,
   type HoldUi,
 } from "./sendprompt-hold.js";
+import { SendPromptWakeHook } from "./sendprompt-wake.js";
 import {
   PLANNER_START_FAILED_TEXT,
   cancelGrokBuildHold,
@@ -233,11 +234,18 @@ export function wireDiscord(
 ): void {
   users.load();
   const liveMessages = new Map<string, Message>();
+  const wake = new SendPromptWakeHook({
+    url: cfg.sendPromptWakeUrl,
+    key: cfg.sendPromptWakeKey,
+    header: cfg.sendPromptWakeHeader,
+  });
+  console.log(wake.describe());
   const holdQueue = new SendPromptHoldQueue({
     filePath: cfg.sendPromptHoldFile,
     maxMs: cfg.sendPromptHoldMaxSec * 1000,
     send: (hop) => sendPrompt(hop.sendUrl, hop.request, cfg.gatewayToken),
     ui: discordHoldUi(client, liveMessages),
+    wake,
   });
 
   client.once(Events.ClientReady, (c) => {
