@@ -8,6 +8,7 @@ import { createHttpServer, listenHttp } from "./http-server.js";
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  console.log(`[boot] wake prompt format=${cfg.wakePromptFormat}`);
   let discord: ReturnType<typeof createDiscordClient> | null = null;
 
   const app = createHttpServer(cfg, () => discord);
