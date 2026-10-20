@@ -154,6 +154,9 @@ See [`.env.example`](./.env.example). Notable names:
 - `HTTP_BIND` / `HTTP_PORT` — container listens `0.0.0.0:18083`; Compose publishes `127.0.0.1:18083`
 - `SENDPROMPT_HOLD_MAX_SEC` — how long a sendPrompt hop is held and retried while the tunnel is down (default `900` = 15 min; `0` = no hold, the first tunnel error is final). See [sendPrompt hold](#sendprompt-hold-and-retry-0210).
 - `SENDPROMPT_HOLD_FILE` — JSON backup of held hops (default `./data/sendprompt-hold.json`, which is `/app/data/sendprompt-hold.json` in the image, on the `bridge-data` named volume in Compose). Set it empty for memory only. The file holds the wake prompt text (the user's message) but no tokens; it is written `0600`.
+- `SENDPROMPT_WAKE_URL` — optional wake hook (0.2.12). Blank (default) = off. When set, the bridge POSTs once per outage to this URL while a hop is held. See [sendPrompt wake hook](#sendprompt-wake-hook-optional-0212). Treat the URL as a secret if it carries one in its path; the bridge only ever logs its host.
+- `SENDPROMPT_WAKE_KEY` — optional key for the wake hook (default blank = no auth header). Store it in your vault, never in git. Never logged.
+- `SENDPROMPT_WAKE_HEADER` — header that carries the key (default `Authorization`, sent as `Authorization: Bearer <key>`). Any other header name sends the raw key, e.g. `X-Webhook-Key: <key>`.
 - `USER_DIRECTORY_FILE` — user directory JSON (default `./data/user-directory.json`, on the same `bridge-data` volume). Empty = memory only. See [User directory](#user-directory-0211).
 - `USER_DIRECTORY_SEED_FILE` — optional read-only seed (default `./config/user-directory.seed.json`; a missing file means no seed).
 
@@ -216,7 +219,7 @@ Now the bridge makes one immediate sendPrompt call. If that fails with a tunnel 
 - **Discord status:** while held, the bridge replies `Bot is waking up, holding your message…`. On success that status message is deleted and the normal ✅ / ⚠️ reaction follows. When the window runs out (or the bot refuses mid-hold), the status is edited to `❌ Couldn't reach the bot, please try again.` and the message gets ❌.
 - **Restart:** held hops are mirrored to `SENDPROMPT_HOLD_FILE`. On startup (Discord ready) unexpired hops are reloaded and replayed in order; hops whose window ran out while the bridge was down get the red X text.
 
-Caveat: holding only helps if the tunnel comes back inside the window. A computer that stays asleep past `SENDPROMPT_HOLD_MAX_SEC` still ends in the red X.
+Caveat: holding only helps if the tunnel comes back inside the window. A computer that stays asleep past `SENDPROMPT_HOLD_MAX_SEC` still ends in the red X, unless the optional [wake hook](#sendprompt-wake-hook-optional-0212) gets it awake in time.
 
 Log lines:
 
@@ -225,6 +228,55 @@ Log lines:
 [sendPrompt] hold retry n=2 msg=… ch=… heldSec=5.0
 [sendPrompt] hold success after 35.0s msg=… ch=… tries=4
 [sendPrompt] hold gave up after 900.0s msg=… ch=… tries=33 reason=window_expired err=…
+```
+
+## sendPrompt wake hook (optional, 0.2.12)
+
+A Grok Bot computer can hibernate for hours (for example 9:09 PM to 8:06 AM). The hold above gives up after `SENDPROMPT_HOLD_MAX_SEC`, so the message still gets the red X. The wake hook lets the bridge ask something else to wake that computer while the hop is still held.
+
+Off by default. Set `SENDPROMPT_WAKE_URL` (and usually `SENDPROMPT_WAKE_KEY`) to turn it on. One wake URL per Grok Bot account is enough: all of that account's bots share one computer.
+
+- **When:** a hop is held on a retryable tunnel error (the same list as the hold: `530`, `1033`, `502`, `503`, `504`, network errors). Auth errors, other 4xx, other 5xx, and a `0` hold window never fire it.
+- **How often:** at most **one POST per outage**, across all channels. It re-arms after the next successful sendPrompt, or once no hop is held any more (every held hop gave up), so the next outage can fire it again. A failed wake POST is not retried in the same outage.
+- **Request:** `POST <SENDPROMPT_WAKE_URL>` with `Content-Type: application/json` and the key in `SENDPROMPT_WAKE_HEADER` (see below). Redirects are refused. Timeout 5 s.
+- **Body** (nothing else; no tokens, no message content, no user ids, no channel ids or names):
+
+  ```json
+  { "reason": "tunnel_1033", "heldCount": 2, "firstHeldAt": "2026-10-20T01:09:12.000Z" }
+  ```
+
+  `reason` is a short code: `tunnel_1033`, `http_530`, `http_502`, `http_503`, `http_504`, or `network`. `heldCount` is how many hops are held right now. `firstHeldAt` is when the oldest of them started holding (UTC ISO).
+- **Never in the way:** the POST is fire-and-forget. It does not block, delay or change the hold and retry schedule. A failure (timeout, network, non-2xx) is logged with the status or error class only, never the key or the URL path.
+
+### Auth header
+
+| `SENDPROMPT_WAKE_HEADER` | Sent |
+| --- | --- |
+| `Authorization` (default) | `Authorization: Bearer <SENDPROMPT_WAKE_KEY>` |
+| any other name, e.g. `X-Webhook-Key` | `X-Webhook-Key: <SENDPROMPT_WAKE_KEY>` (raw key) |
+
+Blank `SENDPROMPT_WAKE_KEY` sends no auth header (a warning is logged at startup). The exact header shape the Grok Bot routine webhook expects is **pending confirmation**; bearer is the default until then, and switching to a raw custom header is a `.env` change only.
+
+### Hold window with a wake hook
+
+`SENDPROMPT_HOLD_MAX_SEC` already sets the hold window and has no upper cap. Keep `900` (15 min) without a wake hook. With a wake hook, raise it so the wake has time to land and the computer time to reconnect its tunnel:
+
+| Setup | Suggested `SENDPROMPT_HOLD_MAX_SEC` |
+| --- | --- |
+| No wake hook (default) | `900` |
+| Wake hook, computer wakes in a few minutes | `1800` (30 min) |
+| Wake hook, slow wake or a long reboot | `3600` (60 min) |
+
+After the first 35 s, a held hop retries every 30 s, so a 3600 s window is about 120 sendPrompt tries per held hop. Held hops stay in `SENDPROMPT_HOLD_FILE` across restarts either way.
+
+Log lines:
+
+```
+[sendPrompt] wake hook on host=… header=Authorization timeoutMs=5000
+[sendPrompt] wake sent status=200 reason=tunnel_1033 heldCount=1 ms=180
+[sendPrompt] wake failed status=401 reason=tunnel_1033 ms=95 (hold continues)
+[sendPrompt] wake failed err=TimeoutError reason=http_530 ms=5001 (hold continues)
+[sendPrompt] wake hook re-armed reason=success
 ```
 
 ## Local planner hop (optional, 0.2.9)
@@ -419,7 +471,7 @@ Wav input is 16-bit PCM, up to 3 minutes, converted to 48 kHz stereo. The JSON b
 
 ```bash
 cd /path/to/grok-bot-discord-bridge
-# Preserve live .env + config/security.json + config/channel-map.json
+# Preserve live .env + config/security.json + config/channel-map.json + config/user-directory.seed.json
 docker compose up -d --build
 curl -sS http://127.0.0.1:18083/healthz   # discordReady: true
 ```

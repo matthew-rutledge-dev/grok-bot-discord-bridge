@@ -56,6 +56,12 @@ export interface AppConfig {
   sendPromptHoldMaxSec: number;
   /** JSON backup for held sendPrompt hops. Empty = memory only. */
   sendPromptHoldFile: string;
+  /** Optional wake hook URL (0.2.12). Blank = off. */
+  sendPromptWakeUrl: string;
+  /** Optional wake hook key. Never logged. */
+  sendPromptWakeKey: string;
+  /** Header for the wake key. `Authorization` = `Bearer <key>`; any other name = raw key. */
+  sendPromptWakeHeader: string;
   /** User directory JSON (0.2.11). Empty = memory only. */
   userDirectoryFile: string;
   /** Optional read-only seed for the user directory. Missing file = no seed. */
@@ -121,6 +127,9 @@ export function loadConfig(): AppConfig {
       process.env.SENDPROMPT_HOLD_FILE === undefined
         ? "./data/sendprompt-hold.json"
         : env("SENDPROMPT_HOLD_FILE"),
+    sendPromptWakeUrl: env("SENDPROMPT_WAKE_URL"),
+    sendPromptWakeKey: env("SENDPROMPT_WAKE_KEY"),
+    sendPromptWakeHeader: env("SENDPROMPT_WAKE_HEADER", "Authorization"),
     userDirectoryFile:
       process.env.USER_DIRECTORY_FILE === undefined
         ? "./data/user-directory.json"

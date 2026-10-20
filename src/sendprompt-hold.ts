@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { isHoldRetryableSendError } from "./grok-client.js";
+import { NO_WAKE, type HoldWakeHook } from "./sendprompt-wake.js";
 import type { SendPromptRequest, SendPromptResponse } from "./types.js";
 
 /**
@@ -93,6 +94,8 @@ export interface HoldQueueOptions {
   ui: HoldUi;
   log?: HoldLog;
   now?: () => number;
+  /** Optional wake hook (0.2.12). Called on held hops, success, and when nothing is held. */
+  wake?: HoldWakeHook;
 }
 
 interface HoldFile {
@@ -117,8 +120,10 @@ export class SendPromptHoldQueue {
   private lastWriteError = "";
   private readonly log: HoldLog;
   private readonly now: () => number;
+  private readonly wake: HoldWakeHook;
 
   constructor(private readonly opts: HoldQueueOptions) {
+    this.wake = opts.wake ?? NO_WAKE;
     this.log = opts.log ?? {
       info: (l) => console.log(l),
       warn: (l) => console.warn(l),
@@ -290,6 +295,7 @@ export class SendPromptHoldQueue {
       }
       const now = this.now();
       await this.finish(channelId, hop);
+      this.callWake(() => this.wake.succeeded());
       if (hop.holding) {
         this.log.info(
           `[sendPrompt] hold success after ${secs(now - (hop.holdStartedAt ?? hop.submittedAt))}s msg=${hop.messageId} ch=${hop.channelId} tries=${hop.tries}`,
@@ -318,11 +324,13 @@ export class SendPromptHoldQueue {
       } else {
         this.persist();
       }
+      this.notifyHeld(err);
       this.busy.delete(channelId);
       this.scheduleHead(channelId);
       return;
     }
     await this.finish(channelId, hop);
+    if (!this.snapshot().some((h) => h.holding)) this.callWake(() => this.wake.idle());
     if (hop.holding) {
       this.log.warn(
         `[sendPrompt] hold gave up after ${secs(now - (hop.holdStartedAt ?? hop.submittedAt))}s msg=${hop.messageId} ch=${hop.channelId} tries=${hop.tries} reason=${retryable ? "window_expired" : "rejected"} err=${errText(err)}`,
@@ -339,6 +347,23 @@ export class SendPromptHoldQueue {
       .catch(() => undefined);
     this.busy.delete(channelId);
     this.scheduleHead(channelId);
+  }
+
+  /** Tell the wake hook a hop is held. Counts and times only; never hop content. */
+  private notifyHeld(err: unknown): void {
+    const held = this.snapshot().filter((h) => h.holding);
+    if (held.length === 0) return;
+    const firstHeldAt = Math.min(...held.map((h) => h.holdStartedAt ?? h.submittedAt));
+    this.callWake(() => this.wake.held({ err, heldCount: held.length, firstHeldAt }));
+  }
+
+  /** The wake hook must never break or delay the hold loop. */
+  private callWake(fn: () => void): void {
+    try {
+      fn();
+    } catch (err) {
+      this.log.warn(`[sendPrompt] wake hook error err=${err instanceof Error ? err.name : typeof err}`);
+    }
   }
 
   /** Mirror held hops to disk (atomic rename). Unheld in-flight hops are not written. */
