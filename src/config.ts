@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { ChannelMapFile, SecurityFile } from "./types.js";
+import { parseWakePromptFormat, type WakePromptFormat } from "./wake-prompt.js";
 
 function env(name: string, fallback = ""): string {
   return (process.env[name] ?? fallback).trim();
@@ -66,6 +67,8 @@ export interface AppConfig {
   userDirectoryFile: string;
   /** Optional read-only seed for the user directory. Missing file = no seed. */
   userDirectorySeedFile: string;
+  /** Wake prompt shape (0.2.14). `compact` (default) or `legacy` (0.2.13 thin JSON). */
+  wakePromptFormat: WakePromptFormat;
 }
 
 export function loadConfig(): AppConfig {
@@ -138,5 +141,12 @@ export function loadConfig(): AppConfig {
       process.env.USER_DIRECTORY_SEED_FILE === undefined
         ? "./config/user-directory.seed.json"
         : env("USER_DIRECTORY_SEED_FILE"),
+    wakePromptFormat: (() => {
+      const { format, valid } = parseWakePromptFormat(process.env.WAKE_PROMPT_FORMAT);
+      if (!valid) {
+        console.warn(`[config] WAKE_PROMPT_FORMAT not compact|legacy, using ${format}`);
+      }
+      return format;
+    })(),
   };
 }

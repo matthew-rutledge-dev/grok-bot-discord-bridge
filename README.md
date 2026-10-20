@@ -49,7 +49,7 @@ Cursor uses this same pair of calls. It does not have a separate Discord or Grok
 ```
 Discord Gateway
     │  MessageCreate (deny-by-default authz)
-    │  optional attachment URL refs in thin wake JSON `a`
+    │  compact wake: human line + routing trailer `⟂ d:<slug>:<id> …` (0.2.14)
     ▼
 channel-map.json  →  agentId (+ optional per-row sendPrompt URL)
     │
@@ -171,12 +171,61 @@ See [`.env.example`](./.env.example). Notable names:
 - `SENDPROMPT_WAKE_HEADER` — header that carries the key (default `Authorization`, sent as `Authorization: Bearer <key>`). Any other header name sends the raw key, e.g. `X-Webhook-Key: <key>`.
 - `USER_DIRECTORY_FILE` — user directory JSON (default `./data/user-directory.json`, on the same `bridge-data` volume). Empty = memory only. See [User directory](#user-directory-0211).
 - `USER_DIRECTORY_SEED_FILE` — optional read-only seed (default `./config/user-directory.seed.json`; a missing file means no seed).
+- `WAKE_PROMPT_FORMAT` — `compact` (default, 0.2.14) or `legacy` (the 0.2.13 `d:` line + thin JSON). Rollback: set `legacy`, then `docker compose up -d` (not `restart`). See [Inbound wake](#inbound-wake-messagecreate--sendprompt).
 
 **Git never gets real secrets** — only `.env.example`. Host `.env` is local.
 
 ## Inbound wake (MessageCreate → sendPrompt)
 
-Prompt shape (unchanged header + thin JSON; optional attachments):
+`WAKE_PROMPT_FORMAT` picks the prompt shape. Default **`compact`** (0.2.14). Set **`legacy`** to roll back to the 0.2.13 shape; both are kept and tested. sendPrompt `metadata` is the same in both.
+
+### Compact (default, 0.2.14)
+
+One human line, the message text, and one routing trailer as the **last line**:
+
+```
+Discord DM from <label>[ (<n> attachment[s])]: <text>
+⟂ d:<slug>:<messageId> u=<userId> c=<channelId> map=<alias> [a=<url>]...
+
+Discord #<channel>[ (<n> attachment[s])] from <label>: <text>
+⟂ d:<slug>:<messageId> u=<userId> c=<channelId> g=<guildId> map=<alias> [a=<url>]...
+```
+
+Example (placeholders):
+
+```
+Discord DM from Alice: can you check the build?
+⟂ d:dm:1111111111111111111 u=222222222222222222 c=333333333333333333 map=example-agent
+
+Discord #general from Bob (1 attachment): what is in this photo?
+⟂ d:general:1111111111111111112 u=444444444444444444 c=555555555555555555 g=666666666666666666 map=example-agent a=https://cdn.example.com/attachments/555555555555555555/777777777777777777/photo.png?ex=1&is=2&hm=abc
+```
+
+- **Header.** `DM` when there is no guild, else `#<channel name>` (falls back to the slug). `<label>` is the user-directory label, else display name, else username, else `user <id>`. Names are display only; `u` stays the authority. Attachment-only messages end the header at `:`. The text may span several lines.
+- **Trailer grammar.** Always the last line. It starts with `⟂` (U+27C2) and a space, then the hop id, then space-separated `key=value` tokens. Values never contain whitespace.
+
+  ```
+  trailer = "⟂" SP hop *( SP key "=" value )
+  hop     = "d:" slug ":" messageId          ; same hop id as legacy `id`
+  key     = "u" | "c" | "g" | "map" | "a"     ; readers ignore unknown keys
+  ```
+
+  | key | meaning | when |
+  |-----|---------|------|
+  | `u` | sender Discord user id (DM callback `userId`) | always |
+  | `c` | channel snowflake (callback `channelId`) | always (DMs too) |
+  | `g` | guild id | guild messages only; absent = DM |
+  | `map` | channel-map alias (`%`, spaces and controls percent-encoded) | when known |
+  | `a` | one Discord CDN attachment URL, used as-is; repeated, in order, max 10 | per attachment |
+
+  Regex for the last line: `^⟂ d:(\S+):(\d+)((?: [a-z]+=\S*)*)$`. Reference parser: `parseWakeTrailer` in [`src/wake-prompt.ts`](./src/wake-prompt.ts). Only the last line counts; the bridge always appends it after the user's text, so a user cannot replace it.
+- `filename`, `contentType` and `size` per attachment, plus `un` / `dn` / `lb`, are only on sendPrompt `metadata` in compact mode (see below).
+
+### sendPrompt metadata
+
+Every wake also carries `metadata`: `source: "discord-bridge"`, `hop`, `discordMessageId`, `discordChannelId`, `discordUserId`, `discordGuildId`, `discordUser` (`{un?,dn?,lb?}`), `callbackBaseUrl`, `callbackPath`, and `attachments` (full refs). The documented sendPrompt API is `{ agentId, prompt }`, and wakes so far reach the bot as prompt text only, so **do not rely on metadata reaching the bot's turn**. The trailer carries everything a reply needs.
+
+### Legacy (`WAKE_PROMPT_FORMAT=legacy`, the 0.2.13 shape)
 
 ```
 d:<slug>:<messageId>
@@ -189,8 +238,13 @@ d:<slug>:<messageId>
 - **`c`** (optional) is the Discord channel snowflake (`message.channelId`) for every inbound, DMs included. Bots can reply with `POST /callback` `channelId=c`; DMs can still use `userId` instead. Readers must treat `c` as optional (older wakes lack it); key order is not guaranteed. The same value is on sendPrompt **`metadata.discordChannelId`**.
 - When the Discord message has attachments, thin JSON includes **`a`**: an array of URL refs (not base64) using Discord CDN `attachment.url` (fallback `proxyURL`), plus optional `filename`, `contentType`, `size`.
 - The same refs are also placed on sendPrompt **`metadata.attachments`**.
+
+### Both formats
+
 - Attachment-only messages (no text) still wake.
 - Cap: first 10 attachments.
+- Readers should accept both shapes during a rollout: a last line starting with `⟂ d:` is compact; a first line `d:<slug>:<id>` followed by a JSON line is legacy.
+- Never paste the trailer, `d:` codes or the JSON into Discord.
 
 ### CDN lifetime caveat
 

@@ -43,6 +43,10 @@ import {
   type WakeAttachmentRef,
 } from "./attachments.js";
 import {
+  formatWakePrompt as formatWakePromptImpl,
+  type WakePromptFormat,
+} from "./wake-prompt.js";
+import {
   elapsedMs,
   hopId,
   logTiming,
@@ -63,50 +67,8 @@ export function createDiscordClient(): Client {
   });
 }
 
-/**
- * Pure wake prompt: `d:<slug>:<message.id>`, thin JSON
- * `{id,g,u,un?,dn?,lb?,c?,map,a?}`, human text.
- */
-export function formatWakePrompt(args: {
-  slug: string;
-  messageId: string;
-  guildId: string | null;
-  channelId: string;
-  userId: string;
-  userTag: string;
-  alias: string;
-  cleaned: string;
-  attachments?: WakeAttachmentRef[];
-  /** Optional sender identity from the user directory (0.2.11). */
-  who?: WakeIdentity;
-}): string {
-  const plugId = `d:${args.slug}:${args.messageId}`;
-  const thinObj: Record<string, unknown> = {
-    id: plugId,
-    g: args.guildId,
-    u: args.userId,
-    map: args.alias,
-  };
-  // Optional identity next to `u`: username, display name, operator label.
-  // Readers must cope with any of them missing.
-  if (args.who?.un) thinObj.un = args.who.un;
-  if (args.who?.dn) thinObj.dn = args.who.dn;
-  if (args.who?.lb) thinObj.lb = args.who.lb;
-  // Optional `c`: Discord channel snowflake (DMs too) so replies can target it directly.
-  if (args.channelId) thinObj.c = args.channelId;
-  if (args.attachments && args.attachments.length > 0) {
-    // Short key `a` keeps the thin envelope small; URL refs only (no base64).
-    thinObj.a = args.attachments.map((r) => {
-      const item: Record<string, unknown> = { url: r.url };
-      if (r.filename) item.filename = r.filename;
-      if (r.contentType) item.contentType = r.contentType;
-      if (typeof r.size === "number") item.size = r.size;
-      return item;
-    });
-  }
-  const thin = JSON.stringify(thinObj);
-  return [plugId, thin, args.cleaned].join("\n");
-}
+/** Kept here for older imports; the formatters live in wake-prompt.ts (0.2.14). */
+export { formatWakePrompt } from "./wake-prompt.js";
 
 function buildPrompt(
   message: Message,
@@ -116,9 +78,12 @@ function buildPrompt(
     alias: string;
     attachments?: WakeAttachmentRef[];
     who?: WakeIdentity;
+    format: WakePromptFormat;
   },
 ): string {
-  return formatWakePrompt({
+  const ch = message.channel as { name?: unknown } | null;
+  const channelName = message.guild && typeof ch?.name === "string" ? ch.name : undefined;
+  return formatWakePromptImpl({
     slug: opts.slug,
     messageId: message.id,
     guildId: message.guild?.id ?? null,
@@ -129,7 +94,8 @@ function buildPrompt(
     cleaned,
     attachments: opts.attachments,
     who: opts.who,
-  });
+    channelName,
+  }, opts.format);
 }
 
 async function fetchMessageChannel(client: Client, channelId: string) {
@@ -375,9 +341,11 @@ export function wireDiscord(
         alias: wakeAlias,
         attachments: attachmentRefs,
         who,
+        format: cfg.wakePromptFormat,
       });
       const metadata: Record<string, unknown> = {
         source: "discord-bridge",
+        hop,
         discordMessageId: message.id,
         discordChannelId: message.channelId,
         discordUserId: message.author.id,
