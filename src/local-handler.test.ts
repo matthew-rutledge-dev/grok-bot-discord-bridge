@@ -10,7 +10,7 @@ import {
 } from "./local-planner.js";
 import type { ChannelMapRow } from "./types.js";
 
-const DEPRECATED = "rumble-pixel-planner";
+const RETIRED = "legacy-pixel-planner";
 const row = (local_handler: string, extra: Record<string, unknown> = {}) =>
   ({ enabled: true, agentId: "example-agent", primary_llm: "local", wake_agent: false, local_handler, ...extra }) as unknown as ChannelMapRow;
 
@@ -19,11 +19,11 @@ describe("local_handler names", () => {
     assert.equal(LOCAL_MEDIA_PLANNER_HANDLER, "local-media-planner");
     assert.equal(isLocalPlannerRow(row("local-media-planner")), true);
   });
-  it("deprecated alias behaves identically", () => {
-    assert.equal(normalizeLocalHandler(DEPRECATED), LOCAL_MEDIA_PLANNER_HANDLER);
-    assert.equal(isLocalPlannerRow(row(DEPRECATED)), isLocalPlannerRow(row("local-media-planner")));
+  it("retired handler names no longer opt in (0.3.0)", () => {
+    assert.equal(normalizeLocalHandler(" local-media-planner "), LOCAL_MEDIA_PLANNER_HANDLER);
+    assert.equal(normalizeLocalHandler(RETIRED), RETIRED);
+    assert.equal(isLocalPlannerRow(row(RETIRED)), false);
     const gb = { harness: "grok-build", profile: "p" };
-    assert.equal(isGrokBuildRow(row(DEPRECATED, gb)), false);
     assert.equal(isGrokBuildRow(row("local-media-planner", gb)), false);
   });
   it("unknown handler is still rejected", () => {
@@ -33,9 +33,8 @@ describe("local_handler names", () => {
 });
 
 describe("planner log pattern", () => {
-  it("matches new and deprecated wake markers", () => {
+  it("matches the wake marker", () => {
     assert.equal(PLANNER_LOG_LINE_RE.test("step=wake_local_planner ok"), true);
-    assert.equal(PLANNER_LOG_LINE_RE.test("step=wake_pixel_edit ok"), true);
     assert.equal(PLANNER_LOG_LINE_RE.test("unrelated noise"), false);
   });
   it("bin forwarder uses the same pattern", () => {

@@ -154,33 +154,20 @@ export function forgetPlannerStatus(
  */
 /** Canonical local_handler value for the local media planner. */
 export const LOCAL_MEDIA_PLANNER_HANDLER = "local-media-planner";
-/** Deprecated alias, still accepted and treated identically. */
-export const DEPRECATED_LOCAL_HANDLER_ALIASES: readonly string[] = ["rumble-pixel-planner"];
-
-let warnedDeprecatedHandler = false;
-
-/** Normalize a local_handler value: deprecated aliases map to the canonical name. */
+/** Normalize a local_handler value (trimmed). Only the canonical name opts in. */
 export function normalizeLocalHandler(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  const v = value.trim();
-  if (DEPRECATED_LOCAL_HANDLER_ALIASES.includes(v)) {
-    if (!warnedDeprecatedHandler) {
-      warnedDeprecatedHandler = true;
-      console.warn(`[local-planner] local_handler "${v}" is deprecated; use "${LOCAL_MEDIA_PLANNER_HANDLER}".`);
-    }
-    return LOCAL_MEDIA_PLANNER_HANDLER;
-  }
-  return v;
+  return value.trim();
 }
 
-/** True when local_handler names the local media planner (canonical or deprecated alias). */
+/** True when local_handler names the local media planner. */
 export function isLocalMediaPlannerHandler(value: unknown): boolean {
   return normalizeLocalHandler(value) === LOCAL_MEDIA_PLANNER_HANDLER;
 }
 
-/** Planner log lines worth surfacing. Matches wake_local_planner and the deprecated wake_pixel_edit. */
+/** Planner log lines worth surfacing. */
 export const PLANNER_LOG_LINE_RE =
-  /primary_llm|wake_local_planner|wake_pixel_edit|entrypoint|DryRun|planner phase|calling in help|escalation|unavailable|Comfy/;
+  /primary_llm|wake_local_planner|entrypoint|DryRun|planner phase|calling in help|escalation|unavailable|Comfy/;
 
 export function isLocalPlannerRow(
   row: ChannelMapRow | null | undefined,
