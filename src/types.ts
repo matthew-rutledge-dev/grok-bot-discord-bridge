@@ -12,8 +12,7 @@ export interface ChannelMapRow {
   /**
    * Opt-in only. Unset (fresh install) keeps sendPrompt.
    * Local planner hop requires all three: primary_llm "local",
-   * wake_agent false, local_handler "local-media-planner"
-   * (deprecated alias "rumble-pixel-planner" still accepted).
+   * wake_agent false, local_handler "local-media-planner".
    */
   primary_llm?: string;
   wake_agent?: boolean;

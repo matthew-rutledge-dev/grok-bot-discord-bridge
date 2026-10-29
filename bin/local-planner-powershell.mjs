@@ -39,7 +39,7 @@ let parsed = {};
 try { parsed = JSON.parse(text); } catch { /* ignore */ }
 const blob = String(parsed.stdoutTail || "") + "\n" + String(parsed.stderrTail || "");
 for (const line of blob.split(/\r?\n/)) {
-  if (/primary_llm|wake_local_planner|wake_pixel_edit|entrypoint|DryRun|planner phase|calling in help|escalation|unavailable|Comfy/.test(line)) {
+  if (/primary_llm|wake_local_planner|entrypoint|DryRun|planner phase|calling in help|escalation|unavailable|Comfy/.test(line)) {
     console.log(line.slice(0, 240));
   }
 }

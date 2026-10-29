@@ -1,5 +1,7 @@
 # grok-bot-discord-bridge
 
+> **Maintenance mode.** New deployments should use [grok-bot-universal-bridge](https://github.com/matthew-rutledge-dev/grok-bot-universal-bridge), which serves Discord and Grok Build from one service. This repo stays available for existing installs and receives fixes only.
+
 Thin **Discord Gateway → Grok Bot `sendPrompt` → Discord callback** bridge.
 
 Self-hosted wake path for Discord → your Grok Bot agents. Configure **your own** Discord bot, guild allowlists, and deploy path. This repo ships example configs with placeholders only — never commit real tokens or live snowflakes.
@@ -357,7 +359,7 @@ A row opts into the local planner only when all three are set:
 - `wake_agent`: `false`
 - `local_handler`: `"local-media-planner"`
 
-Older handler and log-pattern names are still accepted as deprecated aliases.
+Since 0.3.0 only `local-media-planner` opts in. The older handler name and log marker that 0.2.13 accepted as deprecated aliases were removed; rename any old `local_handler` value before upgrading.
 
 Those rows do **not** call `sendPrompt`. The bridge posts a short message in the same channel, `Working on it.`, then POSTs this JSON to `LOCAL_PLANNER_URL` with `Authorization: Bearer <LOCAL_PLANNER_TOKEN>` (planner auth only; this is not the callback token):
 
